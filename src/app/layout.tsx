@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
+import { ClerkProvider } from "@clerk/nextjs";
+import { nbNO } from "@clerk/localizations";
 import "./globals.css";
 
 const inter = Inter({
@@ -18,8 +20,18 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="no" className={`${inter.variable} h-full antialiased`}>
-      <body className="min-h-full font-sans">{children}</body>
-    </html>
+    <ClerkProvider
+      localization={nbNO}
+      appearance={{
+        variables: {
+          colorPrimary: "#7c3aed",
+          borderRadius: "0.75rem",
+        },
+      }}
+    >
+      <html lang="no" className={`${inter.variable} h-full antialiased`}>
+        <body className="min-h-full font-sans">{children}</body>
+      </html>
+    </ClerkProvider>
   );
 }
