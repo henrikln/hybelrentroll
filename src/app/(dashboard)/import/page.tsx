@@ -3,6 +3,12 @@
 import { useState, useCallback } from "react";
 import { Upload, FileSpreadsheet, CheckCircle, AlertCircle } from "lucide-react";
 
+interface ImportEvent {
+  unitKey: string;
+  eventType: string;
+  description: string;
+}
+
 interface ImportResult {
   orgName: string;
   orgNumber: string | null;
@@ -12,6 +18,8 @@ interface ImportResult {
   errorCount: number;
   errors: { row: number; field: string; message: string }[];
   properties: string[];
+  events: ImportEvent[];
+  snapshotCount: number;
 }
 
 export default function ImportPage() {
@@ -165,6 +173,30 @@ export default function ImportPage() {
                   </span>
                 ))}
               </div>
+            </div>
+          )}
+
+          {result.events && result.events.length > 0 && (
+            <div className="mb-4">
+              <p className="text-xs text-gray-400 mb-1">
+                {result.events.length} hendelser oppdaget
+              </p>
+              <div className="max-h-60 overflow-auto rounded bg-purple-50 p-3 text-xs space-y-1">
+                {result.events.map((e, i) => (
+                  <div key={i} className="flex items-start gap-2">
+                    <span className="mt-0.5 h-1.5 w-1.5 rounded-full bg-purple-400 shrink-0" />
+                    <span className="text-gray-700">{e.description}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {result.events && result.events.length === 0 && result.snapshotCount > 0 && (
+            <div className="mb-4">
+              <p className="text-xs text-gray-400">
+                {result.snapshotCount} snapshots lagret — ingen endringer siden forrige import
+              </p>
             </div>
           )}
 

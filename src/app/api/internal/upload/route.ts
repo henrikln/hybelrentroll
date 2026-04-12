@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { parseRentRollExcel } from "@/lib/excel/parser";
+import { processRentRoll } from "@/lib/excel/importer";
 
 export async function POST(req: NextRequest) {
   try {
@@ -15,27 +15,19 @@ export async function POST(req: NextRequest) {
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
-    const result = parseRentRollExcel(buffer);
-
-    // Get unique property addresses
-    const properties = [
-      ...new Set(
-        result.rows.map((r) => `${r.property.streetName} ${r.property.streetNumber}`)
-      ),
-    ];
-
-    // TODO: When DB is connected, call importer.ts to upsert data
+    const result = processRentRoll(buffer);
 
     return NextResponse.json({
       orgName: result.orgName,
       orgNumber: result.orgNumber,
       reportDate: result.reportDate,
       totalRows: result.totalRows,
-      parsedRows: result.rows.length,
-      errorCount: result.errors.length,
+      parsedRows: result.parsedRows,
+      errorCount: result.errorCount,
       errors: result.errors,
-      properties,
-      rows: result.rows,
+      properties: result.properties,
+      events: result.events,
+      snapshotCount: result.snapshots.length,
     });
   } catch (err) {
     console.error("Upload error:", err);

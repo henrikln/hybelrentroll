@@ -64,6 +64,7 @@ model Account {
   companies       Company[]
   rentRollImports RentRollImport[]
   apiKeys         ApiKey[]
+  allowedSenders  AllowedSender[]
 
   @@map("accounts")
 }
@@ -78,14 +79,16 @@ model Company {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  account          Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  properties       Property[]
-  units            Unit[]
-  leaseholders     Leaseholder[]
-  contracts        Contract[]
-  securityDeposits SecurityDeposit[]
-  rentAdjustments  RentAdjustment[]
-  rentRollImports  RentRollImport[]
+  account            Account            @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  properties         Property[]
+  units              Unit[]
+  leaseholders       Leaseholder[]
+  contracts          Contract[]
+  securityDeposits   SecurityDeposit[]
+  rentAdjustments    RentAdjustment[]
+  rentRollImports    RentRollImport[]
+  rentRollSnapshots  RentRollSnapshot[]
+  unitEvents         UnitEvent[]
 
   @@unique([accountId, orgNumber])
   @@map("companies")
@@ -256,6 +259,8 @@ model RentRollImport {
   account    Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
   company    Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
   importedBy User?    @relation(fields: [importedById], references: [id], onDelete: SetNull)
+  snapshots  RentRollSnapshot[]
+  unitEvents UnitEvent[]
 
   @@map("rent_roll_imports")
 }
@@ -277,4 +282,95 @@ model ApiKey {
   createdBy User    @relation(fields: [createdById], references: [id], onDelete: Cascade)
 
   @@map("api_keys")
+}
+
+/// Maps sender email addresses to accounts for email ingestion.
+/// All emails to the system inbox are resolved via this table.
+model AllowedSender {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId String   @map("account_id") @db.Uuid
+  email     String
+  note      String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([email])
+  @@map("allowed_senders")
+}
+
+/// Denormalized snapshot of every unit at import time.
+/// One row per unit per import — immutable history for diffing.
+model RentRollSnapshot {
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  importId           String    @map("import_id") @db.Uuid
+  companyId          String    @map("company_id") @db.Uuid
+  reportDate         DateTime  @map("report_date") @db.Date
+  unitKey            String    @map("unit_key")
+  // Property
+  streetName         String    @map("street_name")
+  streetNumber       String    @map("street_number")
+  postalCode         String    @map("postal_code")
+  postalPlace        String    @map("postal_place")
+  gnr                Int?
+  bnr                Int?
+  unitNumber         String?   @map("unit_number")
+  customNumber       String?   @map("custom_number")
+  unitType           String    @map("unit_type")
+  numRooms           Int?      @map("num_rooms")
+  areaSqm            Decimal?  @map("area_sqm") @db.Decimal(8, 2)
+  numBedrooms        Int?      @map("num_bedrooms")
+  floor              Int?
+  // Contract
+  externalContractId String?   @map("external_contract_id")
+  status             String
+  contractType       String?   @map("contract_type")
+  startDate          DateTime? @map("start_date") @db.Date
+  endDate            DateTime? @map("end_date") @db.Date
+  noticePeriodMonths Int?      @map("notice_period_months")
+  earliestNoticeDate DateTime? @map("earliest_notice_date") @db.Date
+  monthlyRent        Decimal?  @map("monthly_rent") @db.Decimal(10, 2)
+  fixedReduction     Decimal?  @map("fixed_reduction") @db.Decimal(10, 2)
+  lastRentAdjDate    DateTime? @map("last_rent_adj_date") @db.Date
+  nextRentAdjDate    DateTime? @map("next_rent_adj_date") @db.Date
+  rentBeforeLastAdj  Decimal?  @map("rent_before_last_adj") @db.Decimal(10, 2)
+  cpiBase            Decimal?  @map("cpi_base") @db.Decimal(8, 2)
+  akontoElectricity  Decimal?  @map("akonto_electricity") @db.Decimal(10, 2)
+  akontoWaterSewage  Decimal?  @map("akonto_water_sewage") @db.Decimal(10, 2)
+  // Leaseholder
+  leaseholderName    String?   @map("leaseholder_name")
+  leaseholderEmail   String?   @map("leaseholder_email")
+  leaseholderPhone   String?   @map("leaseholder_phone")
+  // Security
+  securityType       String?   @map("security_type")
+  securityAmount     Decimal?  @map("security_amount") @db.Decimal(10, 2)
+  createdAt          DateTime  @default(now()) @map("created_at")
+
+  import  RentRollImport @relation(fields: [importId], references: [id], onDelete: Cascade)
+  company Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, unitKey, reportDate])
+  @@map("rent_roll_snapshots")
+}
+
+/// Events auto-generated by diffing consecutive rent roll snapshots.
+/// Provides a timeline of all changes per unit over time.
+model UnitEvent {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId   String   @map("company_id") @db.Uuid
+  importId    String   @map("import_id") @db.Uuid
+  unitKey     String   @map("unit_key")
+  eventDate   DateTime @map("event_date") @db.Date
+  eventType   String   @map("event_type")
+  description String
+  oldValue    Json?    @map("old_value")
+  newValue    Json?    @map("new_value")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  company Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  import  RentRollImport @relation(fields: [importId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, eventDate])
+  @@index([companyId, unitKey])
+  @@map("unit_events")
 }
