@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { importRentRollToDb, type DbImportResult } from "@/lib/excel/db-importer";
 
-const FROM_EMAIL = "Hybelrentroll <noreply@send.estatelab.amp11.no>";
+const FROM_EMAIL = "Hybelrentroll <noreply@doodrenios.resend.app>";
 
 export async function POST(req: NextRequest) {
   try {

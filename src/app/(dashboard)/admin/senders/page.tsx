@@ -62,7 +62,7 @@ export default async function SendersPage() {
       <p className="mb-6 text-sm text-gray-500">
         E-postadresser som kan sende rent roll-filer til{" "}
         <span className="font-mono text-gray-700">
-          import@send.estatelab.amp11.no
+          import@doodrenios.resend.app
         </span>
         . Innloggede brukere registreres automatisk.
       </p>
