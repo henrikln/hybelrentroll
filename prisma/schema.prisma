@@ -51,109 +51,130 @@ enum ImportStatus {
   failed
 }
 
-model Organization {
-  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  clerkOrgId  String   @unique @map("clerk_org_id")
-  name        String
-  orgNumber   String?  @map("org_number")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+/// Multi-tenancy root. One account per logged-in user/org (e.g. Henrik's account).
+/// An account can own multiple companies (Utleier).
+model Account {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clerkOrgId String   @unique @map("clerk_org_id")
+  name       String
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
 
-  users            User[]
+  users           User[]
+  companies       Company[]
+  rentRollImports RentRollImport[]
+  apiKeys         ApiKey[]
+
+  @@map("accounts")
+}
+
+/// A registered Norwegian company (AS) that acts as landlord (Utleier).
+/// Each rent roll file belongs to one company, identified by org number.
+model Company {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId String   @map("account_id") @db.Uuid
+  name      String
+  orgNumber String   @map("org_number")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  account          Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
   properties       Property[]
   units            Unit[]
-  tenants          Tenant[]
+  leaseholders     Leaseholder[]
   contracts        Contract[]
   securityDeposits SecurityDeposit[]
   rentAdjustments  RentAdjustment[]
   rentRollImports  RentRollImport[]
-  apiKeys          ApiKey[]
 
-  @@map("organizations")
+  @@unique([accountId, orgNumber])
+  @@map("companies")
 }
 
 model User {
-  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  clerkUserId    String   @unique @map("clerk_user_id")
-  organizationId String   @map("organization_id") @db.Uuid
-  email          String
-  name           String?
-  role           UserRole @default(member)
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clerkUserId String   @unique @map("clerk_user_id")
+  accountId   String   @map("account_id") @db.Uuid
+  email       String
+  name        String?
+  role        UserRole @default(member)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  apiKeys      ApiKey[]
-  imports      RentRollImport[]
+  account Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  apiKeys ApiKey[]
+  imports RentRollImport[]
 
   @@map("users")
 }
 
 model Property {
-  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  organizationId String   @map("organization_id") @db.Uuid
-  streetName     String   @map("street_name")
-  streetNumber   String   @map("street_number")
-  postalCode     String   @map("postal_code")
-  postalPlace    String   @map("postal_place")
-  municipality   String?
-  gnr            Int?
-  bnr            Int?
-  snr            Int?
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId    String   @map("company_id") @db.Uuid
+  streetName   String   @map("street_name")
+  streetNumber String   @map("street_number")
+  postalCode   String   @map("postal_code")
+  postalPlace  String   @map("postal_place")
+  municipality String?
+  gnr          Int?
+  bnr          Int?
+  snr          Int?
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  units        Unit[]
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  units   Unit[]
 
-  @@unique([organizationId, streetName, streetNumber, postalCode, gnr, bnr])
+  @@unique([companyId, streetName, streetNumber, postalCode, gnr, bnr])
   @@map("properties")
 }
 
 model Unit {
-  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  organizationId String   @map("organization_id") @db.Uuid
-  propertyId     String   @map("property_id") @db.Uuid
-  unitNumber     String?  @map("unit_number")
-  customNumber   String?  @map("custom_number")
-  unitType       UnitType @default(annet) @map("unit_type")
-  numRooms       Int?     @map("num_rooms")
-  areaSqm        Decimal? @map("area_sqm") @db.Decimal(8, 2)
-  numBedrooms    Int?     @map("num_bedrooms")
-  floor          Int?
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId    String   @map("company_id") @db.Uuid
+  propertyId   String   @map("property_id") @db.Uuid
+  unitNumber   String?  @map("unit_number")
+  customNumber String?  @map("custom_number")
+  unitType     UnitType @default(annet) @map("unit_type")
+  numRooms     Int?     @map("num_rooms")
+  areaSqm      Decimal? @map("area_sqm") @db.Decimal(8, 2)
+  numBedrooms  Int?     @map("num_bedrooms")
+  floor        Int?
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  property     Property     @relation(fields: [propertyId], references: [id], onDelete: Cascade)
-  contracts    Contract[]
+  company   Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  property  Property   @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  contracts Contract[]
 
   @@unique([propertyId, unitNumber, customNumber])
   @@map("units")
 }
 
-model Tenant {
-  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  organizationId String   @map("organization_id") @db.Uuid
-  name           String
-  email          String?
-  phone          String?
-  invoiceEmail   String?  @map("invoice_email")
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
+/// A person renting a unit (leietaker). Named "Leaseholder" to avoid confusion
+/// with "tenant" in the multi-tenancy sense.
+model Leaseholder {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId    String   @map("company_id") @db.Uuid
+  name         String
+  email        String?
+  phone        String?
+  invoiceEmail String?  @map("invoice_email")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  contracts    Contract[]
+  company   Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  contracts Contract[]
 
-  @@unique([organizationId, name, email])
-  @@map("tenants")
+  @@unique([companyId, name, email])
+  @@map("leaseholders")
 }
 
 model Contract {
   id                       String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  organizationId           String         @map("organization_id") @db.Uuid
+  companyId                String         @map("company_id") @db.Uuid
   unitId                   String         @map("unit_id") @db.Uuid
-  tenantId                 String?        @map("tenant_id") @db.Uuid
+  leaseholderId            String?        @map("leaseholder_id") @db.Uuid
   externalContractId       String?        @map("external_contract_id")
   status                   ContractStatus @default(ledig)
   contractType             ContractType?  @map("contract_type")
@@ -173,33 +194,33 @@ model Contract {
   createdAt                DateTime       @default(now()) @map("created_at")
   updatedAt                DateTime       @updatedAt @map("updated_at")
 
-  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  company         Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
   unit            Unit             @relation(fields: [unitId], references: [id], onDelete: Cascade)
-  tenant          Tenant?          @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  leaseholder     Leaseholder?     @relation(fields: [leaseholderId], references: [id], onDelete: SetNull)
   securityDeposit SecurityDeposit?
   rentAdjustments RentAdjustment[]
 
-  @@unique([organizationId, externalContractId])
+  @@unique([companyId, externalContractId])
   @@map("contracts")
 }
 
 model SecurityDeposit {
-  id             String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  organizationId String       @map("organization_id") @db.Uuid
-  contractId     String       @unique @map("contract_id") @db.Uuid
-  securityType   SecurityType @map("security_type")
-  amount         Decimal?     @db.Decimal(10, 2)
-  createdAt      DateTime     @default(now()) @map("created_at")
+  id           String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId    String       @map("company_id") @db.Uuid
+  contractId   String       @unique @map("contract_id") @db.Uuid
+  securityType SecurityType @map("security_type")
+  amount       Decimal?     @db.Decimal(10, 2)
+  createdAt    DateTime     @default(now()) @map("created_at")
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  contract     Contract     @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  company  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  contract Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
 
   @@map("security_deposits")
 }
 
 model RentAdjustment {
   id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  organizationId String   @map("organization_id") @db.Uuid
+  companyId      String   @map("company_id") @db.Uuid
   contractId     String   @map("contract_id") @db.Uuid
   adjustmentDate DateTime @map("adjustment_date") @db.Date
   rentBefore     Decimal? @map("rent_before") @db.Decimal(10, 2)
@@ -209,49 +230,51 @@ model RentAdjustment {
   adjustmentPct  Decimal? @map("adjustment_pct") @db.Decimal(5, 2)
   createdAt      DateTime @default(now()) @map("created_at")
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  contract     Contract     @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  company  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  contract Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
 
   @@map("rent_adjustments")
 }
 
 model RentRollImport {
-  id             String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  organizationId String       @map("organization_id") @db.Uuid
-  filename       String
-  source         ImportSource
-  senderEmail    String?      @map("sender_email")
-  status         ImportStatus @default(pending)
-  rowsTotal      Int?         @map("rows_total")
-  rowsImported   Int?         @map("rows_imported")
-  rowsFailed     Int?         @map("rows_failed")
-  errorLog       Json?        @map("error_log")
-  fileUrl        String?      @map("file_url")
-  importedById   String?      @map("imported_by_user_id") @db.Uuid
-  createdAt      DateTime     @default(now()) @map("created_at")
-  completedAt    DateTime?    @map("completed_at")
+  id           String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId    String       @map("account_id") @db.Uuid
+  companyId    String?      @map("company_id") @db.Uuid
+  filename     String
+  source       ImportSource
+  senderEmail  String?      @map("sender_email")
+  status       ImportStatus @default(pending)
+  rowsTotal    Int?         @map("rows_total")
+  rowsImported Int?         @map("rows_imported")
+  rowsFailed   Int?         @map("rows_failed")
+  errorLog     Json?        @map("error_log")
+  fileUrl      String?      @map("file_url")
+  importedById String?      @map("imported_by_user_id") @db.Uuid
+  createdAt    DateTime     @default(now()) @map("created_at")
+  completedAt  DateTime?    @map("completed_at")
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  importedBy   User?        @relation(fields: [importedById], references: [id], onDelete: SetNull)
+  account    Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  company    Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  importedBy User?    @relation(fields: [importedById], references: [id], onDelete: SetNull)
 
   @@map("rent_roll_imports")
 }
 
 model ApiKey {
-  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  organizationId String    @map("organization_id") @db.Uuid
-  name           String
-  keyPrefix      String    @map("key_prefix")
-  keyHash        String    @map("key_hash")
-  scopes         String[]
-  lastUsedAt     DateTime? @map("last_used_at")
-  expiresAt      DateTime? @map("expires_at")
-  revokedAt      DateTime? @map("revoked_at")
-  createdById    String    @map("created_by_user_id") @db.Uuid
-  createdAt      DateTime  @default(now()) @map("created_at")
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId   String    @map("account_id") @db.Uuid
+  name        String
+  keyPrefix   String    @map("key_prefix")
+  keyHash     String    @map("key_hash")
+  scopes      String[]
+  lastUsedAt  DateTime? @map("last_used_at")
+  expiresAt   DateTime? @map("expires_at")
+  revokedAt   DateTime? @map("revoked_at")
+  createdById String    @map("created_by_user_id") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at")
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  createdBy    User         @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdBy User    @relation(fields: [createdById], references: [id], onDelete: Cascade)
 
   @@map("api_keys")
 }

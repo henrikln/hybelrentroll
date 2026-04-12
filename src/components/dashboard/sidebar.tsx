@@ -61,6 +61,7 @@ const navigation: NavSection[] = [
   {
     title: "Entiteter",
     items: [
+      { label: "Selskaper", href: "/selskaper", icon: Building2 },
       { label: "Eiendommer", href: "/eiendommer", icon: Building },
       { label: "Leietakere", href: "/leietakere", icon: Users },
       { label: "Kontakter", href: "/kontakter", icon: Contact },
