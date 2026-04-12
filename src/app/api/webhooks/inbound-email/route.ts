@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { processInboundEmail, type EmailAttachment } from "@/lib/email/inbound";
+import { prisma } from "@/lib/db";
+import { importRentRollToDb } from "@/lib/excel/db-importer";
 
 /**
- * Webhook endpoint for inbound email (Resend Inbound / SendGrid Inbound Parse).
+ * Webhook endpoint for inbound email (Resend).
  *
- * Expected POST body (Resend format):
+ * Resend POST body:
  * {
  *   "from": "henrikln@nagelgaarden.no",
- *   "to": "import@hybelrentroll.no",
+ *   "to": "import@send.estatelab.ampeleven.no",
  *   "subject": "Rent roll April 2026",
  *   "attachments": [
  *     { "filename": "rentroll.xlsx", "content": "<base64>", "content_type": "..." }
@@ -16,10 +17,12 @@ import { processInboundEmail, type EmailAttachment } from "@/lib/email/inbound";
  */
 export async function POST(req: NextRequest) {
   try {
-    // TODO: Verify webhook signature (Resend HMAC)
     const body = await req.json();
 
-    const senderEmail: string = body.from ?? body.sender ?? "";
+    const senderEmail: string = (
+      body.from ?? body.sender ?? ""
+    ).toLowerCase().trim();
+
     const rawAttachments: Array<{
       filename: string;
       content: string;
@@ -27,53 +30,125 @@ export async function POST(req: NextRequest) {
       contentType?: string;
     }> = body.attachments ?? [];
 
+    console.log(`[inbound-email] from=${senderEmail}, attachments=${rawAttachments.length}`);
+
     if (!senderEmail) {
       return NextResponse.json({ error: "Missing sender" }, { status: 400 });
     }
 
-    // Convert base64 attachments to buffers
-    const attachments: EmailAttachment[] = rawAttachments.map((a) => ({
-      filename: a.filename,
-      content: Buffer.from(a.content, "base64"),
-      contentType: a.content_type ?? a.contentType ?? "application/octet-stream",
-    }));
+    // 1. Look up sender → account
+    const sender = await prisma.allowedSender.findUnique({
+      where: { email: senderEmail },
+      include: { account: true },
+    });
 
-    const result = processInboundEmail(senderEmail, attachments);
-
-    if (result.rejected) {
-      // TODO: Send rejection email back to sender via Resend
-      console.warn(`Inbound email rejected: ${result.rejectionReason}`);
+    if (!sender) {
+      console.warn(`[inbound-email] Unknown sender: ${senderEmail}`);
+      // TODO: send rejection email via Resend
       return NextResponse.json(
-        { status: "rejected", reason: result.rejectionReason },
-        { status: 200 } // Return 200 to prevent webhook retries
+        { status: "rejected", reason: `Ukjent avsender: ${senderEmail}` },
+        { status: 200 } // 200 to prevent webhook retries
       );
     }
 
-    // TODO: Send confirmation email back to sender
-    console.log(
-      `Processed ${result.attachmentsProcessed} attachments from ${result.senderEmail} ` +
-        `for account ${result.accountName}`
+    // 2. Filter xlsx attachments
+    const xlsxAttachments = rawAttachments.filter(
+      (a) =>
+        a.filename.endsWith(".xlsx") &&
+        (a.content_type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
+          a.contentType === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
+          a.content_type === "application/octet-stream" ||
+          a.contentType === "application/octet-stream")
     );
+
+    if (xlsxAttachments.length === 0) {
+      console.warn(`[inbound-email] No .xlsx attachments from ${senderEmail}`);
+      return NextResponse.json(
+        { status: "rejected", reason: "Ingen .xlsx-vedlegg funnet" },
+        { status: 200 }
+      );
+    }
+
+    // 3. Process each attachment
+    const results = [];
+    for (const attachment of xlsxAttachments) {
+      const buffer = Buffer.from(attachment.content, "base64");
+      const result = await importRentRollToDb(buffer, sender.accountId, {
+        filename: attachment.filename,
+        source: "email",
+        senderEmail,
+      });
+      results.push(result);
+      console.log(
+        `[inbound-email] Imported ${attachment.filename}: ` +
+          `${result.parsedRows} rows, ${result.eventCount} events`
+      );
+    }
+
+    // 4. Send confirmation email via Resend (if API key is configured)
+    if (process.env.RESEND_API_KEY) {
+      try {
+        await sendConfirmationEmail(senderEmail, results);
+      } catch (emailErr) {
+        console.error("[inbound-email] Failed to send confirmation:", emailErr);
+      }
+    }
 
     return NextResponse.json({
       status: "processed",
-      senderEmail: result.senderEmail,
-      accountName: result.accountName,
-      attachmentsProcessed: result.attachmentsProcessed,
-      results: result.results.map((r) => ({
+      senderEmail,
+      accountName: sender.account.name,
+      results: results.map((r) => ({
+        importId: r.importId,
         orgName: r.orgName,
-        orgNumber: r.orgNumber,
-        reportDate: r.reportDate,
         parsedRows: r.parsedRows,
-        events: r.events.length,
-        errors: r.errorCount,
+        eventCount: r.eventCount,
+        errorCount: r.errorCount,
       })),
     });
   } catch (err) {
-    console.error("Inbound email error:", err);
+    console.error("[inbound-email] Error:", err);
     return NextResponse.json(
       { error: "Internal error processing email" },
       { status: 500 }
     );
+  }
+}
+
+async function sendConfirmationEmail(
+  to: string,
+  results: Array<{
+    orgName: string;
+    parsedRows: number;
+    eventCount: number;
+    errorCount: number;
+    properties: string[];
+  }>
+) {
+  const summary = results
+    .map(
+      (r) =>
+        `• ${r.orgName}: ${r.parsedRows} enheter importert, ${r.eventCount} hendelser` +
+        (r.errorCount > 0 ? ` (${r.errorCount} feil)` : "")
+    )
+    .join("\n");
+
+  const res = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      from: "Hybelrentroll <noreply@send.estatelab.ampeleven.no>",
+      to: [to],
+      subject: "Import fullført",
+      text: `Hei!\n\nDin rent roll er importert:\n\n${summary}\n\nSe detaljer på https://hybelrentroll.vercel.app\n\n— Hybelrentroll`,
+    }),
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Resend API error ${res.status}: ${body}`);
   }
 }

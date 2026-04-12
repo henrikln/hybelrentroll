@@ -53,11 +53,10 @@ enum ImportStatus {
 /// Multi-tenancy root. One account per logged-in user/org (e.g. Henrik's account).
 /// An account can own multiple companies (Utleier).
 model Account {
-  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  clerkOrgId String   @unique @map("clerk_org_id")
-  name       String
-  createdAt  DateTime @default(now()) @map("created_at")
-  updatedAt  DateTime @updatedAt @map("updated_at")
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name      String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   users           User[]
   companies       Company[]
@@ -94,14 +93,13 @@ model Company {
 }
 
 model User {
-  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  clerkUserId String   @unique @map("clerk_user_id")
-  accountId   String   @map("account_id") @db.Uuid
-  email       String
-  name        String?
-  role        UserRole @default(member)
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId String   @map("account_id") @db.Uuid
+  email     String   @unique
+  name      String?
+  role      UserRole @default(member)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   account Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
   apiKeys ApiKey[]
@@ -118,8 +116,8 @@ model Property {
   postalCode   String   @map("postal_code")
   postalPlace  String   @map("postal_place")
   municipality String?
-  gnr          Int?
-  bnr          Int?
+  gnr          Int      @default(0)
+  bnr          Int      @default(0)
   snr          Int?
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
@@ -135,8 +133,8 @@ model Unit {
   id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   companyId    String   @map("company_id") @db.Uuid
   propertyId   String   @map("property_id") @db.Uuid
-  unitNumber   String?  @map("unit_number")
-  customNumber String?  @map("custom_number")
+  unitNumber   String   @default("") @map("unit_number")
+  customNumber String   @default("") @map("custom_number")
   unitType     UnitType @default(annet) @map("unit_type")
   numRooms     Int?     @map("num_rooms")
   areaSqm      Decimal? @map("area_sqm") @db.Decimal(8, 2)
@@ -159,7 +157,7 @@ model Leaseholder {
   id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   companyId    String   @map("company_id") @db.Uuid
   name         String
-  email        String?
+  email        String   @default("")
   phone        String?
   invoiceEmail String?  @map("invoice_email")
   createdAt    DateTime @default(now()) @map("created_at")
