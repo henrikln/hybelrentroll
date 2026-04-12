@@ -1,5 +1,6 @@
 import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
+import { prisma } from "@/lib/db";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   providers: [
@@ -12,6 +13,32 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     signIn: "/sign-in",
   },
   callbacks: {
+    async signIn({ user }) {
+      if (!user.email) return true;
+
+      // Auto-create account + allowed sender on first sign-in
+      try {
+        const email = user.email.toLowerCase();
+        const existing = await prisma.allowedSender.findUnique({
+          where: { email },
+        });
+
+        if (!existing) {
+          await prisma.account.create({
+            data: {
+              name: user.name ?? email,
+              allowedSenders: {
+                create: { email, note: "Auto-registrert ved innlogging" },
+              },
+            },
+          });
+        }
+      } catch (err) {
+        console.error("[auth] Failed to auto-register allowed sender:", err);
+      }
+
+      return true;
+    },
     authorized({ auth, request }) {
       const isLoggedIn = !!auth?.user;
       const pathname = request.nextUrl.pathname;

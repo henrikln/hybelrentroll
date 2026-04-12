@@ -23,6 +23,7 @@ import {
   Upload,
   Settings,
   Key,
+  Mail,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -72,6 +73,7 @@ const navigation: NavSection[] = [
     items: [
       { label: "Import", href: "/import", icon: Upload },
       { label: "API-nøkler", href: "/admin/api-keys", icon: Key },
+      { label: "Avsendere", href: "/admin/senders", icon: Mail },
       { label: "Innstillinger", href: "/admin/users", icon: Settings },
     ],
   },
