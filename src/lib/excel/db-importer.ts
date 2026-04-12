@@ -326,7 +326,7 @@ export async function importRentRollToDb(
           eventCount++;
         }
       }
-    });
+    }, { maxWait: 15000, timeout: 60000 });
 
     // 6. Mark import as completed
     await prisma.rentRollImport.update({
