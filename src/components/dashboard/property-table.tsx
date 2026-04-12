@@ -5,7 +5,6 @@ interface PropertyRow {
   id: string;
   name: string;
   annualizedRent: number;
-  rentThisYear: number;
   areaSqm: number;
   colorIndex: number;
 }
@@ -39,9 +38,6 @@ export function PropertyTable({ properties }: PropertyTableProps) {
               Annualisert
             </th>
             <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-400">
-              I år
-            </th>
-            <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-400">
               Areal
             </th>
           </tr>
@@ -71,14 +67,6 @@ export function PropertyTable({ properties }: PropertyTableProps) {
                     <Banknote className="h-4 w-4 text-emerald-400" />
                     <span className="text-sm text-gray-700">
                       {formatNOKShort(property.annualizedRent)}
-                    </span>
-                  </div>
-                </td>
-                <td className="px-5 py-3">
-                  <div className="flex items-center gap-1.5">
-                    <Banknote className="h-4 w-4 text-emerald-400" />
-                    <span className="text-sm text-gray-700">
-                      {formatNOKShort(property.rentThisYear)}
                     </span>
                   </div>
                 </td>

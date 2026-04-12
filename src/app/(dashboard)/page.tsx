@@ -11,14 +11,14 @@ const companies = [
     orgNumber: "931734385",
     totalMonthlyRent: 219560,
     properties: [
-      { id: "1", name: "Bekketomten 1", annualizedRent: 228984, rentThisYear: 190820, areaSqm: 0, colorIndex: 0 },
-      { id: "2", name: "Nagelgården 6", annualizedRent: 410868, rentThisYear: 342390, areaSqm: 0, colorIndex: 1 },
-      { id: "3", name: "Nagelgården 4", annualizedRent: 240000, rentThisYear: 200000, areaSqm: 0, colorIndex: 2 },
-      { id: "4", name: "Sliberget 3", annualizedRent: 224400, rentThisYear: 187000, areaSqm: 0, colorIndex: 3 },
-      { id: "5", name: "Tvedtegården 1", annualizedRent: 594096, rentThisYear: 495080, areaSqm: 0, colorIndex: 4 },
-      { id: "6", name: "Hellandsgården 3", annualizedRent: 346476, rentThisYear: 288730, areaSqm: 0, colorIndex: 5 },
-      { id: "7", name: "Hellandsgården 1", annualizedRent: 234000, rentThisYear: 195000, areaSqm: 0, colorIndex: 0 },
-      { id: "8", name: "Bekketomten 2", annualizedRent: 356496, rentThisYear: 297080, areaSqm: 0, colorIndex: 1 },
+      { id: "1", name: "Bekketomten 1", annualizedRent: 228984, areaSqm: 0, colorIndex: 0 },
+      { id: "2", name: "Nagelgården 6", annualizedRent: 410868, areaSqm: 0, colorIndex: 1 },
+      { id: "3", name: "Nagelgården 4", annualizedRent: 240000, areaSqm: 0, colorIndex: 2 },
+      { id: "4", name: "Sliberget 3", annualizedRent: 224400, areaSqm: 0, colorIndex: 3 },
+      { id: "5", name: "Tvedtegården 1", annualizedRent: 594096, areaSqm: 0, colorIndex: 4 },
+      { id: "6", name: "Hellandsgården 3", annualizedRent: 346476, areaSqm: 0, colorIndex: 5 },
+      { id: "7", name: "Hellandsgården 1", annualizedRent: 234000, areaSqm: 0, colorIndex: 0 },
+      { id: "8", name: "Bekketomten 2", annualizedRent: 356496, areaSqm: 0, colorIndex: 1 },
     ],
   },
   {
@@ -26,31 +26,23 @@ const companies = [
     orgNumber: "998604087",
     totalMonthlyRent: 147091,
     properties: [
-      { id: "9", name: "Strangehagen 18", annualizedRent: 1765092, rentThisYear: 1471076, areaSqm: 0, colorIndex: 2 },
+      { id: "9", name: "Strangehagen 18", annualizedRent: 1765092, areaSqm: 0, colorIndex: 2 },
     ],
   },
 ];
 
 const allProperties = companies.flatMap((c) => c.properties);
 const totalAnnualized = allProperties.reduce((sum, p) => sum + p.annualizedRent, 0);
-const totalThisYear = allProperties.reduce((sum, p) => sum + p.rentThisYear, 0);
-
 export default function OversiktPage() {
   return (
     <div>
       <h1 className="mb-6 text-xl font-semibold text-gray-900">Oversikt</h1>
 
       {/* KPI Cards */}
-      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <KpiCard
           label="Annualisert leie"
           value={formatNOK(totalAnnualized)}
-          icon={Banknote}
-          color="green"
-        />
-        <KpiCard
-          label="Leie i år"
-          value={formatNOK(totalThisYear)}
           icon={Banknote}
           color="green"
         />
