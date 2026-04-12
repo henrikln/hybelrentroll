@@ -4,22 +4,12 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutGrid,
-  CalendarDays,
   Table2,
-  Clock,
-  TrendingUp,
   KeyRound,
   BarChart3,
-  Receipt,
-  ClipboardList,
-  GitBranch,
-  Shield,
-  FileText,
-  FolderOpen,
   Building2,
   Building,
   Users,
-  Contact,
   Upload,
   Settings,
   Key,
@@ -41,22 +31,14 @@ interface NavSection {
 
 const navigation: NavSection[] = [
   {
-    items: [
-      { label: "Oversikt", href: "/", icon: LayoutGrid },
-      { label: "Hendelser", href: "/hendelser", icon: CalendarDays },
-    ],
+    items: [{ label: "Oversikt", href: "/", icon: LayoutGrid }],
   },
   {
     title: "Innsikt",
     items: [
       { label: "Rent roll", href: "/rent-roll", icon: Table2 },
-      { label: "Tidslinje", href: "/tidslinje", icon: Clock },
-      { label: "Indeksregulering", href: "/indeksregulering", icon: TrendingUp },
       { label: "Ledighet", href: "/ledighet", icon: KeyRound },
       { label: "Utløpsprofil", href: "/utlopsprofil", icon: BarChart3 },
-      { label: "Fakturering", href: "/fakturering", icon: Receipt },
-      { label: "Garantier", href: "/garantier", icon: Shield },
-      { label: "Dokumenter", href: "/dokumenter", icon: FileText },
     ],
   },
   {
@@ -65,7 +47,6 @@ const navigation: NavSection[] = [
       { label: "Selskaper", href: "/selskaper", icon: Building2 },
       { label: "Eiendommer", href: "/eiendommer", icon: Building },
       { label: "Leietakere", href: "/leietakere", icon: Users },
-      { label: "Kontakter", href: "/kontakter", icon: Contact },
     ],
   },
   {
@@ -74,7 +55,8 @@ const navigation: NavSection[] = [
       { label: "Import", href: "/import", icon: Upload },
       { label: "API-nøkler", href: "/admin/api-keys", icon: Key },
       { label: "Avsendere", href: "/admin/senders", icon: Mail },
-      { label: "Innstillinger", href: "/admin/users", icon: Settings },
+      { label: "Brukere", href: "/admin/users", icon: Users },
+      { label: "Innstillinger", href: "/admin/settings", icon: Settings },
     ],
   },
 ];

@@ -1,20 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { importRentRollToDb } from "@/lib/excel/db-importer";
+import { importRentRollToDb, type DbImportResult } from "@/lib/excel/db-importer";
 
-/**
- * Webhook endpoint for inbound email (Resend).
- *
- * Resend POST body:
- * {
- *   "from": "henrikln@nagelgaarden.no",
- *   "to": "import@send.estatelab.ampeleven.no",
- *   "subject": "Rent roll April 2026",
- *   "attachments": [
- *     { "filename": "rentroll.xlsx", "content": "<base64>", "content_type": "..." }
- *   ]
- * }
- */
+const FROM_EMAIL = "Hybelrentroll <noreply@send.estatelab.ampeleven.no>";
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -44,25 +33,28 @@ export async function POST(req: NextRequest) {
 
     if (!sender) {
       console.warn(`[inbound-email] Unknown sender: ${senderEmail}`);
-      // TODO: send rejection email via Resend
+      await sendErrorEmail(
+        senderEmail,
+        "Ukjent avsender",
+        `E-postadressen ${senderEmail} er ikke registrert i systemet. Be en administrator om å legge til adressen under Avsendere i dashboardet.`
+      );
       return NextResponse.json(
         { status: "rejected", reason: `Ukjent avsender: ${senderEmail}` },
-        { status: 200 } // 200 to prevent webhook retries
+        { status: 200 }
       );
     }
 
     // 2. Filter xlsx attachments
-    const xlsxAttachments = rawAttachments.filter(
-      (a) =>
-        a.filename.endsWith(".xlsx") &&
-        (a.content_type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
-          a.contentType === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
-          a.content_type === "application/octet-stream" ||
-          a.contentType === "application/octet-stream")
+    const xlsxAttachments = rawAttachments.filter((a) =>
+      a.filename.endsWith(".xlsx")
     );
 
     if (xlsxAttachments.length === 0) {
-      console.warn(`[inbound-email] No .xlsx attachments from ${senderEmail}`);
+      await sendErrorEmail(
+        senderEmail,
+        "Ingen .xlsx-vedlegg",
+        "E-posten inneholdt ingen .xlsx-vedlegg. Kun Excel-filer (.xlsx) støttes."
+      );
       return NextResponse.json(
         { status: "rejected", reason: "Ingen .xlsx-vedlegg funnet" },
         { status: 200 }
@@ -70,32 +62,58 @@ export async function POST(req: NextRequest) {
     }
 
     // 3. Process each attachment
-    const results = [];
+    const results: DbImportResult[] = [];
+    const errors: string[] = [];
+
     for (const attachment of xlsxAttachments) {
-      const buffer = Buffer.from(attachment.content, "base64");
-      const result = await importRentRollToDb(buffer, sender.accountId, {
-        filename: attachment.filename,
-        source: "email",
-        senderEmail,
-      });
-      results.push(result);
-      console.log(
-        `[inbound-email] Imported ${attachment.filename}: ` +
-          `${result.parsedRows} rows, ${result.eventCount} events`
-      );
+      try {
+        const buffer = Buffer.from(attachment.content, "base64");
+        const result = await importRentRollToDb(buffer, sender.accountId, {
+          filename: attachment.filename,
+          source: "email",
+          senderEmail,
+        });
+
+        if (result.errorCount > 0) {
+          errors.push(
+            `${attachment.filename}: ${result.errorCount} feil ved parsing. ` +
+            `Sjekk at filen har eksakt samme format som tidligere innsendte filer.`
+          );
+        }
+
+        results.push(result);
+        console.log(
+          `[inbound-email] Imported ${attachment.filename}: ` +
+            `${result.parsedRows} rows, ${result.eventCount} events`
+        );
+      } catch (err) {
+        const msg = `Feil ved behandling av ${attachment.filename}: ${err instanceof Error ? err.message : String(err)}`;
+        errors.push(msg);
+        console.error(`[inbound-email] ${msg}`);
+      }
     }
 
-    // 4. Send confirmation email via Resend (if API key is configured)
+    // 4. Send response email
     if (process.env.RESEND_API_KEY) {
       try {
-        await sendConfirmationEmail(senderEmail, results);
+        if (results.length > 0) {
+          await sendSuccessEmail(senderEmail, results);
+        }
+        if (errors.length > 0) {
+          await sendErrorEmail(
+            senderEmail,
+            "Feil ved import",
+            errors.join("\n\n") +
+              "\n\nSjekk at filformatet er eksakt som tidligere innsendte filer (samme kolonner, samme rekkefølge)."
+          );
+        }
       } catch (emailErr) {
-        console.error("[inbound-email] Failed to send confirmation:", emailErr);
+        console.error("[inbound-email] Failed to send email:", emailErr);
       }
     }
 
     return NextResponse.json({
-      status: "processed",
+      status: results.length > 0 ? "processed" : "failed",
       senderEmail,
       accountName: sender.account.name,
       results: results.map((r) => ({
@@ -105,6 +123,7 @@ export async function POST(req: NextRequest) {
         eventCount: r.eventCount,
         errorCount: r.errorCount,
       })),
+      errors,
     });
   } catch (err) {
     console.error("[inbound-email] Error:", err);
@@ -115,36 +134,59 @@ export async function POST(req: NextRequest) {
   }
 }
 
-async function sendConfirmationEmail(
-  to: string,
-  results: Array<{
-    orgName: string;
-    parsedRows: number;
-    eventCount: number;
-    errorCount: number;
-    properties: string[];
-  }>
-) {
-  const summary = results
-    .map(
-      (r) =>
-        `• ${r.orgName}: ${r.parsedRows} enheter importert, ${r.eventCount} hendelser` +
-        (r.errorCount > 0 ? ` (${r.errorCount} feil)` : "")
-    )
-    .join("\n");
+async function sendSuccessEmail(to: string, results: DbImportResult[]) {
+  const totalProperties = results.reduce((s, r) => s + r.properties.length, 0);
+  const totalUnits = results.reduce((s, r) => s + r.parsedRows, 0);
 
+  const details = results
+    .map((r) => {
+      const annualized = r.parsedRows > 0 ? `${r.parsedRows} enheter` : "0 enheter";
+      return (
+        `${r.orgName}\n` +
+        `  Eiendommer: ${r.properties.length} (${r.properties.join(", ")})\n` +
+        `  Enheter: ${annualized}\n` +
+        `  Hendelser: ${r.eventCount}`
+      );
+    })
+    .join("\n\n");
+
+  await resendEmail(to, "Import fullført", [
+    `Hei!`,
+    ``,
+    `Din rent roll er importert.`,
+    ``,
+    `Totalt: ${totalProperties} eiendommer, ${totalUnits} enheter`,
+    ``,
+    details,
+    ``,
+    `Se detaljer på https://hybelrentroll.vercel.app`,
+    ``,
+    `— Hybelrentroll`,
+  ].join("\n"));
+}
+
+async function sendErrorEmail(to: string, subject: string, body: string) {
+  if (!process.env.RESEND_API_KEY) return;
+
+  await resendEmail(to, subject, [
+    `Hei!`,
+    ``,
+    body,
+    ``,
+    `Ta kontakt med administrator hvis problemet vedvarer.`,
+    ``,
+    `— Hybelrentroll`,
+  ].join("\n"));
+}
+
+async function resendEmail(to: string, subject: string, text: string) {
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      from: "Hybelrentroll <noreply@send.estatelab.ampeleven.no>",
-      to: [to],
-      subject: "Import fullført",
-      text: `Hei!\n\nDin rent roll er importert:\n\n${summary}\n\nSe detaljer på https://hybelrentroll.vercel.app\n\n— Hybelrentroll`,
-    }),
+    body: JSON.stringify({ from: FROM_EMAIL, to: [to], subject, text }),
   });
 
   if (!res.ok) {

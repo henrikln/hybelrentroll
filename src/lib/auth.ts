@@ -2,6 +2,18 @@ import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
 import { prisma } from "@/lib/db";
 
+declare module "next-auth" {
+  interface Session {
+    accountId?: string;
+  }
+}
+
+declare module "next-auth" {
+  interface User {
+    accountId?: string;
+  }
+}
+
 export const { handlers, signIn, signOut, auth } = NextAuth({
   providers: [
     Google({
@@ -16,28 +28,53 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     async signIn({ user }) {
       if (!user.email) return true;
 
-      // Auto-create account + allowed sender on first sign-in
       try {
         const email = user.email.toLowerCase();
+
+        // Check if this email is already an allowed sender (belongs to an account)
         const existing = await prisma.allowedSender.findUnique({
           where: { email },
+          include: { account: true },
         });
 
         if (!existing) {
-          await prisma.account.create({
+          // New user — create a new account (tenant)
+          const account = await prisma.account.create({
             data: {
               name: user.name ?? email,
               allowedSenders: {
-                create: { email, note: "Auto-registrert ved innlogging" },
+                create: { email, note: "Opprettet ved første innlogging" },
               },
             },
           });
+          user.accountId = account.id;
+        } else {
+          user.accountId = existing.accountId;
         }
       } catch (err) {
-        console.error("[auth] Failed to auto-register allowed sender:", err);
+        console.error("[auth] Failed to resolve account:", err);
       }
 
       return true;
+    },
+    async jwt({ token, user }) {
+      if (user?.accountId) {
+        token.accountId = user.accountId;
+      }
+      // If accountId not in token yet (e.g. existing session), look it up
+      if (!token.accountId && token.email) {
+        const sender = await prisma.allowedSender.findUnique({
+          where: { email: (token.email as string).toLowerCase() },
+        });
+        if (sender) {
+          token.accountId = sender.accountId;
+        }
+      }
+      return token;
+    },
+    async session({ session, token }) {
+      session.accountId = token.accountId as string | undefined;
+      return session;
     },
     authorized({ auth, request }) {
       const isLoggedIn = !!auth?.user;
@@ -54,4 +91,16 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       return true;
     },
   },
+  session: {
+    strategy: "jwt",
+  },
 });
+
+/**
+ * Get the current user's accountId from the session.
+ * Use this in server components and API routes for tenant isolation.
+ */
+export async function getAccountId(): Promise<string | null> {
+  const session = await auth();
+  return session?.accountId ?? null;
+}
