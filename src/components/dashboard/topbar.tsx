@@ -1,8 +1,16 @@
-import { auth, signOut } from "@/lib/auth";
 import Image from "next/image";
 
+async function getSession() {
+  try {
+    const { auth } = await import("@/lib/auth");
+    return await auth();
+  } catch {
+    return null;
+  }
+}
+
 export async function Topbar() {
-  const session = await auth();
+  const session = await getSession();
   const user = session?.user;
 
   const userName = user?.name ?? "Bruker";
@@ -36,19 +44,16 @@ export async function Topbar() {
           </div>
         )}
 
-        <form
-          action={async () => {
-            "use server";
-            await signOut({ redirectTo: "/sign-in" });
-          }}
-        >
-          <button
-            type="submit"
-            className="text-xs text-gray-400 hover:text-gray-600"
-          >
-            Logg ut
-          </button>
-        </form>
+        {user && (
+          <form action="/api/auth/signout" method="POST">
+            <button
+              type="submit"
+              className="text-xs text-gray-400 hover:text-gray-600"
+            >
+              Logg ut
+            </button>
+          </form>
+        )}
       </div>
     </header>
   );
