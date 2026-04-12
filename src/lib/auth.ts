@@ -14,12 +14,17 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   callbacks: {
     authorized({ auth, request }) {
       const isLoggedIn = !!auth?.user;
+      const pathname = request.nextUrl.pathname;
       const isPublicRoute =
-        request.nextUrl.pathname.startsWith("/sign-in") ||
-        request.nextUrl.pathname.startsWith("/api/webhooks");
+        pathname.startsWith("/sign-in") ||
+        pathname.startsWith("/api/auth") ||
+        pathname.startsWith("/api/webhooks");
 
       if (isPublicRoute) return true;
-      return isLoggedIn;
+      if (!isLoggedIn) {
+        return Response.redirect(new URL("/sign-in", request.nextUrl.origin));
+      }
+      return true;
     },
   },
 });
