@@ -43,24 +43,15 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 2. Extract attachments from webhook payload
-    const rawAttachments: Array<Record<string, unknown>> = data.attachments ?? [];
-
-    // Log structure of first attachment to debug field names
-    if (rawAttachments.length > 0) {
-      const sample = rawAttachments[0];
-      console.log(`[inbound-email] attachment[0] keys: ${Object.keys(sample).join(", ")}`);
-      console.log(`[inbound-email] attachment[0] filename: ${sample.filename}, content_type: ${sample.content_type ?? sample.contentType}`);
-      console.log(`[inbound-email] attachment[0] has content: ${!!sample.content}, content length: ${typeof sample.content === "string" ? sample.content.length : "N/A"}`);
-    }
-
-    const xlsxAttachments = rawAttachments.filter((a) =>
+    // 2. Check webhook has xlsx attachments
+    const webhookAttachments: Array<{ filename?: string }> = data.attachments ?? [];
+    const xlsxCount = webhookAttachments.filter((a) =>
       String(a.filename ?? "").endsWith(".xlsx")
-    );
+    ).length;
 
-    console.log(`[inbound-email] attachments=${rawAttachments.length}, xlsx=${xlsxAttachments.length}`);
+    console.log(`[inbound-email] webhook attachments=${webhookAttachments.length}, xlsx=${xlsxCount}`);
 
-    if (xlsxAttachments.length === 0) {
+    if (xlsxCount === 0) {
       await sendErrorEmail(
         senderEmail,
         "Ingen .xlsx-vedlegg",
@@ -72,14 +63,25 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Try to get file buffers — content may be inline (base64) or need API fetch
-    const attachmentFiles = extractAttachmentBuffers(xlsxAttachments);
+    if (!emailId || !process.env.RESEND_API_KEY) {
+      console.error("[inbound-email] Missing email_id or RESEND_API_KEY");
+      return NextResponse.json(
+        { error: "Cannot fetch attachments" },
+        { status: 500 }
+      );
+    }
+
+    // Fetch actual attachment content via Resend receiving API
+    const attachmentFiles = await fetchReceivedAttachments(emailId);
 
     if (attachmentFiles.length === 0) {
-      console.error("[inbound-email] Could not extract attachment content. Raw keys:",
-        rawAttachments.map(a => Object.keys(a)));
+      await sendErrorEmail(
+        senderEmail,
+        "Kunne ikke laste ned vedlegg",
+        "Vedleggene kunne ikke lastes ned fra e-posten. Prøv å sende på nytt."
+      );
       return NextResponse.json(
-        { status: "failed", reason: "Could not extract attachment content" },
+        { status: "failed", reason: "Could not download attachments" },
         { status: 500 }
       );
     }
@@ -165,20 +167,51 @@ function parseEmailAddress(raw: string): string {
   return trimmed.includes("@") ? trimmed : "";
 }
 
-/** Extract attachment buffers from webhook payload */
-function extractAttachmentBuffers(
-  attachments: Array<Record<string, unknown>>
-): Array<{ filename: string; buffer: Buffer }> {
+/** Fetch attachment files via Resend receiving API */
+async function fetchReceivedAttachments(
+  emailId: string
+): Promise<Array<{ filename: string; buffer: Buffer }>> {
   const files: Array<{ filename: string; buffer: Buffer }> = [];
 
-  for (const att of attachments) {
-    const filename = String(att.filename ?? "unknown.xlsx");
-    const content = att.content as string | undefined;
+  try {
+    // GET /emails/receiving/{email_id}/attachments
+    const res = await fetch(
+      `https://api.resend.com/emails/receiving/${emailId}/attachments`,
+      {
+        headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}` },
+      }
+    );
 
-    if (content && typeof content === "string") {
-      // Base64 encoded content
-      files.push({ filename, buffer: Buffer.from(content, "base64") });
+    if (!res.ok) {
+      console.error(`[inbound-email] Receiving attachments API ${res.status}: ${await res.text()}`);
+      return files;
     }
+
+    const json = await res.json();
+    const attachments: Array<{
+      id: string;
+      filename: string;
+      content_type: string;
+      download_url: string;
+    }> = json.data ?? json;
+
+    console.log(`[inbound-email] API returned ${attachments.length} attachments`);
+
+    for (const att of attachments) {
+      if (!att.filename?.endsWith(".xlsx")) continue;
+
+      console.log(`[inbound-email] Downloading ${att.filename} from ${att.download_url?.substring(0, 60)}...`);
+      const dlRes = await fetch(att.download_url);
+      if (dlRes.ok) {
+        const arrayBuffer = await dlRes.arrayBuffer();
+        files.push({ filename: att.filename, buffer: Buffer.from(arrayBuffer) });
+        console.log(`[inbound-email] Downloaded ${att.filename}: ${arrayBuffer.byteLength} bytes`);
+      } else {
+        console.error(`[inbound-email] Download failed for ${att.filename}: ${dlRes.status}`);
+      }
+    }
+  } catch (err) {
+    console.error("[inbound-email] Error fetching attachments:", err);
   }
 
   return files;
