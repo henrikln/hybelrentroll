@@ -66,19 +66,22 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Also check if we recently processed imports from this sender (within 5 min)
+    // Also check if we recently processed imports from this sender+emailId combo (within 5 min)
     // This catches Resend retries for old emails that don't have emailId stored
-    const recentCutoff = new Date(Date.now() - 5 * 60 * 1000);
-    const recentImport = await prisma.rentRollImport.findFirst({
-      where: {
-        senderEmail,
-        createdAt: { gt: recentCutoff },
-      },
-      select: { id: true },
-    });
-    if (recentImport) {
-      console.log(`[inbound-email] Recent import from ${senderEmail} within 5min, skipping retry`);
-      return NextResponse.json({ status: "skipped_recent", senderEmail });
+    // Only apply this check when we don't have an emailId (the emailId check above is more precise)
+    if (!emailId) {
+      const recentCutoff = new Date(Date.now() - 5 * 60 * 1000);
+      const recentImport = await prisma.rentRollImport.findFirst({
+        where: {
+          senderEmail,
+          createdAt: { gt: recentCutoff },
+        },
+        select: { id: true },
+      });
+      if (recentImport) {
+        console.log(`[inbound-email] Recent import from ${senderEmail} within 5min (no emailId), skipping retry`);
+        return NextResponse.json({ status: "skipped_recent", senderEmail });
+      }
     }
 
     // 1. Look up sender → account
