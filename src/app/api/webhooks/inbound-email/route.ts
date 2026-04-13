@@ -53,19 +53,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Missing sender" }, { status: 400 });
     }
 
-    // Idempotency: skip if we already processed this exact email.
-    // Uses emailId which uniquely identifies each email from Resend.
-    // This handles webhook retries (Resend sends the same emailId again).
-    // We intentionally do NOT block by sender+time — multiple emails from the
-    // same sender in quick succession are legitimate (different files/companies).
+    // Idempotency: track which files from this email have already been imported.
+    // If the webhook timed out mid-processing, Resend retries with the same emailId.
+    // We skip files already imported but process any remaining ones.
+    const processedFilenames = new Set<string>();
     if (emailId) {
-      const alreadyImported = await prisma.rentRollImport.findFirst({
+      const existingImports = await prisma.rentRollImport.findMany({
         where: { emailId },
-        select: { id: true },
+        select: { filename: true },
       });
-      if (alreadyImported) {
-        console.log(`[inbound-email] Already processed email_id=${emailId}, skipping`);
-        return NextResponse.json({ status: "already_processed", emailId });
+      for (const imp of existingImports) {
+        processedFilenames.add(imp.filename);
+      }
+      if (existingImports.length > 0) {
+        console.log(`[inbound-email] email_id=${emailId} has ${existingImports.length} existing imports: ${[...processedFilenames].join(", ")}`);
       }
     }
 
@@ -136,6 +137,12 @@ export async function POST(req: NextRequest) {
     const errors: string[] = [];
 
     for (const attachment of attachmentFiles) {
+      // Skip files already imported (e.g. from a previous partial webhook call)
+      if (processedFilenames.has(attachment.filename)) {
+        console.log(`[inbound-email] Skipping already-imported file: ${attachment.filename}`);
+        continue;
+      }
+
       try {
         const result = await importRentRollToDb(attachment.buffer, sender.accountId, {
           filename: attachment.filename,
@@ -161,6 +168,12 @@ export async function POST(req: NextRequest) {
         errors.push(msg);
         console.error(`[inbound-email] ${msg}`);
       }
+    }
+
+    // If all files were already processed (full retry of completed email), return early
+    if (results.length === 0 && errors.length === 0 && processedFilenames.size > 0) {
+      console.log(`[inbound-email] All files already processed for email_id=${emailId}`);
+      return NextResponse.json({ status: "already_processed", emailId });
     }
 
     // 4. Send response email
