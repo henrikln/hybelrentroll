@@ -127,4 +127,7 @@
   html {
     @apply font-sans;
   }
+  a, button, [role="button"], input[type="submit"], input[type="button"], summary {
+    cursor: pointer;
+  }
 }
