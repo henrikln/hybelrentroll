@@ -104,10 +104,12 @@ function getSnapshotPropertyData(
   units: SnapshotUnit[],
   propertyId: string
 ): PropertyData | null {
-  // propertyId can be a real UUID (live mode) or "streetName_streetNumber" (snapshot mode)
-  // Try matching by address key first (snapshot links), then fall back to looking up by ID
+  // propertyId can be a real UUID (live mode) or "companyId_streetName_streetNumber" (snapshot mode)
+  // Also supports legacy "streetName_streetNumber" format
   let propertyUnits = units.filter(
-    (u) => `${u.streetName}_${u.streetNumber}` === propertyId
+    (u) =>
+      `${u.companyId}_${u.streetName}_${u.streetNumber}` === propertyId ||
+      `${u.streetName}_${u.streetNumber}` === propertyId
   );
 
   if (propertyUnits.length === 0) return null;
@@ -175,12 +177,12 @@ export default async function PropertyDetailPage({
     if (!data) {
       const property = await prisma.property.findFirst({
         where: { id: propertyId, company: { accountId } },
-        select: { streetName: true, streetNumber: true },
+        select: { streetName: true, streetNumber: true, companyId: true },
       });
       if (property) {
         data = getSnapshotPropertyData(
           units,
-          `${property.streetName}_${property.streetNumber}`
+          `${property.companyId}_${property.streetName}_${property.streetNumber}`
         );
       }
     }

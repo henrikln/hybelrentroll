@@ -84,7 +84,8 @@ function getSnapshotCards(
   >();
 
   for (const u of units) {
-    const key = `${u.streetName} ${u.streetNumber}`;
+    // Group by company + address to match live view behavior
+    const key = `${u.companyId}_${u.streetName}_${u.streetNumber}`;
     if (!propertyMap.has(key)) {
       propertyMap.set(key, { units: [], first: u });
     }
@@ -94,7 +95,7 @@ function getSnapshotCards(
   return [...propertyMap.values()].map((prop) => {
     const f = prop.first;
     return {
-      id: `${f.streetName}_${f.streetNumber}`,
+      id: `${f.companyId}_${f.streetName}_${f.streetNumber}`,
       name: `${f.streetName} ${f.streetNumber}`,
       postalCode: f.postalCode,
       postalPlace: f.postalPlace,

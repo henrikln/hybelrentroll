@@ -124,14 +124,16 @@ function getDataFromSnapshots(
 
   for (const snap of snaps) {
     const addr = `${snap.streetName} ${snap.streetNumber}`;
-    if (!propertyMap.has(addr)) {
-      propertyMap.set(addr, {
+    // Group by company + address to match live view behavior
+    const key = `${snap.company.id}_${addr}`;
+    if (!propertyMap.has(key)) {
+      propertyMap.set(key, {
         companyName: snap.company.name,
         name: addr,
         units: [],
       });
     }
-    propertyMap.get(addr)!.units.push(snap);
+    propertyMap.get(key)!.units.push(snap);
   }
 
   const companyNames = new Set<string>();
