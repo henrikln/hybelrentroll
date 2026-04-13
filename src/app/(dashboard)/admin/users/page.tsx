@@ -11,8 +11,10 @@ import {
   ShieldOff,
   UserX,
   UserCheck,
+  ArrowRightLeft,
 } from "lucide-react";
 import { RenameAccountDialog } from "@/components/dashboard/rename-account-dialog";
+import { CompanyMoveSelect } from "@/components/dashboard/company-move-select";
 
 async function addUserToAccount(formData: FormData) {
   "use server";
@@ -110,6 +112,46 @@ async function toggleActive(formData: FormData) {
   revalidatePath("/admin/users");
 }
 
+async function moveCompany(formData: FormData) {
+  "use server";
+  await requireAdmin();
+  const isGlobal = await getIsGlobalAdmin();
+  if (!isGlobal) return;
+
+  const companyId = formData.get("companyId") as string;
+  const targetAccountId = formData.get("targetAccountId") as string;
+  if (!companyId || !targetAccountId) return;
+
+  const company = await prisma.company.findUnique({ where: { id: companyId } });
+  if (!company) return;
+
+  const targetAccount = await prisma.account.findUnique({ where: { id: targetAccountId } });
+  if (!targetAccount) return;
+
+  // Move the company and all its related data to the target account
+  await prisma.company.update({
+    where: { id: companyId },
+    data: { accountId: targetAccountId },
+  });
+
+  revalidatePath("/admin/users");
+}
+
+async function deleteCompany(formData: FormData) {
+  "use server";
+  await requireAdmin();
+  const isGlobal = await getIsGlobalAdmin();
+  if (!isGlobal) return;
+
+  const companyId = formData.get("companyId") as string;
+  if (!companyId) return;
+
+  // Cascade delete handles snapshots, events, properties, units, contracts, etc.
+  await prisma.company.delete({ where: { id: companyId } });
+
+  revalidatePath("/admin/users");
+}
+
 async function renameAccount(formData: FormData) {
   "use server";
   const myAccountId = await requireAdmin();
@@ -185,9 +227,30 @@ export default async function AdminUsersPage() {
                       {account.companies.map((c) => (
                         <span
                           key={c.id}
-                          className="rounded-full bg-purple-50 px-2.5 py-0.5 text-xs text-purple-700"
+                          className="inline-flex items-center gap-1 rounded-full bg-purple-50 px-2.5 py-0.5 text-xs text-purple-700"
                         >
                           {c.name}
+                          {isGlobalAdmin && (
+                            <>
+                              <CompanyMoveSelect
+                                companyId={c.id}
+                                accounts={accounts
+                                  .filter((a) => a.id !== account.id)
+                                  .map((a) => ({ id: a.id, name: a.name }))}
+                                moveAction={moveCompany}
+                              />
+                              <form action={deleteCompany} className="inline">
+                                <input type="hidden" name="companyId" value={c.id} />
+                                <button
+                                  type="submit"
+                                  className="text-purple-400 hover:text-red-500"
+                                  title="Slett selskap"
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </button>
+                              </form>
+                            </>
+                          )}
                         </span>
                       ))}
                     </div>
