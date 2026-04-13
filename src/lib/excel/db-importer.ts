@@ -257,15 +257,16 @@ export async function importRentRollToDb(
             akontoWaterSewage: row.contract.akontoWaterSewage,
           };
 
+          // Ensure only one contract per unit — delete any other contracts
+          // for this unit before upserting the current one. The Excel file
+          // may contain historical contract rows (old + new) for the same unit.
           if (contractWhere) {
-            // Clean up any existing contract for this unit that lacks an
-            // externalContractId — prevents duplicates when a contract
-            // gains an external ID between imports
+            // Delete ALL other contracts for this unit (different extId or null)
             await tx.contract.deleteMany({
               where: {
                 companyId: company.id,
                 unitId: unit.id,
-                externalContractId: null,
+                externalContractId: { not: row.contract.externalContractId },
               },
             });
 
@@ -280,7 +281,6 @@ export async function importRentRollToDb(
             });
           } else {
             // No externalContractId — find or create by unit
-            // Also clean up any duplicate contracts for this unit
             const existing = await tx.contract.findMany({
               where: { companyId: company.id, unitId: unit.id },
             });
