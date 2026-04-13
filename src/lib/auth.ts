@@ -1,5 +1,6 @@
 import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
+import MicrosoftEntraID from "next-auth/providers/microsoft-entra-id";
 import { prisma } from "@/lib/db";
 
 const SUPER_ADMINS = (process.env.SUPER_ADMIN_EMAILS ?? "")
@@ -26,6 +27,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       clientId: process.env.GOOGLE_CLIENT_ID!,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
     }),
+    MicrosoftEntraID,
   ],
   pages: {
     signIn: "/sign-in",
