@@ -10,7 +10,6 @@ import {
   Building,
   Users,
   Upload,
-  Settings,
   Mail,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -52,7 +51,6 @@ const navigation: NavSection[] = [
       { label: "Import", href: "/import", icon: Upload },
       { label: "Avsendere", href: "/admin/senders", icon: Mail },
       { label: "Brukere", href: "/admin/users", icon: Users },
-      { label: "Innstillinger", href: "/admin/settings", icon: Settings },
     ],
   },
 ];
