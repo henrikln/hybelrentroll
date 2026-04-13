@@ -35,6 +35,7 @@ export async function importRentRollToDb(
     filename: string;
     source: ImportSource;
     senderEmail?: string;
+    emailId?: string;
   }
 ): Promise<DbImportResult> {
   // 1. Parse Excel
@@ -99,6 +100,7 @@ export async function importRentRollToDb(
       filename: opts.filename,
       source: opts.source,
       senderEmail: opts.senderEmail ?? null,
+      emailId: opts.emailId ?? null,
       status: "processing",
       rowsTotal: parsed.totalRows,
     },

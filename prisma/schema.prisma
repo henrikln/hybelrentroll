@@ -246,6 +246,7 @@ model RentRollImport {
   filename     String
   source       ImportSource
   senderEmail  String?      @map("sender_email")
+  emailId      String?      @map("email_id")
   status       ImportStatus @default(pending)
   rowsTotal    Int?         @map("rows_total")
   rowsImported Int?         @map("rows_imported")

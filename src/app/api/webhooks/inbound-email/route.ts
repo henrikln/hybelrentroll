@@ -24,6 +24,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Missing sender" }, { status: 400 });
     }
 
+    // Idempotency: skip if we already processed this email
+    if (emailId) {
+      const alreadyImported = await prisma.rentRollImport.findFirst({
+        where: { emailId },
+        select: { id: true },
+      });
+      if (alreadyImported) {
+        console.log(`[inbound-email] Already processed email_id=${emailId}, skipping`);
+        return NextResponse.json({ status: "already_processed", emailId });
+      }
+    }
+
     // 1. Look up sender → account
     const sender = await prisma.allowedSender.findUnique({
       where: { email: senderEmail },
@@ -96,6 +108,7 @@ export async function POST(req: NextRequest) {
           filename: attachment.filename,
           source: "email",
           senderEmail,
+          emailId,
         });
 
         if (result.errorCount > 0) {
