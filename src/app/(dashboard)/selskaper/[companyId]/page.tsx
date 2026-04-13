@@ -7,21 +7,40 @@ import { notFound } from "next/navigation";
 import { Building2, Banknote, Users, Ruler } from "lucide-react";
 import { KpiCard } from "@/components/dashboard/kpi-card";
 import { TenantTable, type TenantRow } from "@/components/dashboard/tenant-table";
+import { getSnapshotData, normalizeSnapshots, type SnapshotUnit } from "@/lib/period";
 import Link from "next/link";
 
 function toNum(d: { toNumber(): number } | null | undefined): number {
   return d ? d.toNumber() : 0;
 }
 
-export default async function CompanyDetailPage({
-  params,
-}: {
-  params: Promise<{ companyId: string }>;
-}) {
-  const { companyId } = await params;
-  const accountId = await getAccountId();
-  if (!accountId) notFound();
+interface PropertyRow {
+  id: string;
+  address: string;
+  postalCode: string;
+  postalPlace: string;
+  gnr: number | null;
+  bnr: number | null;
+  unitCount: number;
+  vacantCount: number;
+}
 
+interface CompanyData {
+  name: string;
+  orgNumber: string;
+  annualRent: number;
+  totalArea: number;
+  totalUnits: number;
+  vacantUnits: number;
+  properties: PropertyRow[];
+  tenants: TenantRow[];
+  mapMarkers: string;
+}
+
+async function getLiveData(
+  accountId: string,
+  companyId: string
+): Promise<CompanyData | null> {
   const company = await prisma.company.findFirst({
     where: { id: companyId, accountId },
     include: {
@@ -40,7 +59,7 @@ export default async function CompanyDetailPage({
     },
   });
 
-  if (!company) notFound();
+  if (!company) return null;
 
   const allUnits = company.properties.flatMap((p) => p.units);
   const totalUnits = allUnits.length;
@@ -53,6 +72,24 @@ export default async function CompanyDetailPage({
     return sum + (c ? toNum(c.monthlyRent) * 12 : 0);
   }, 0);
   const totalArea = allUnits.reduce((sum, u) => sum + toNum(u.areaSqm), 0);
+
+  const properties: PropertyRow[] = company.properties.map((p) => {
+    const pUnits = p.units.length;
+    const pVacant = p.units.filter((u) => {
+      const c = u.contracts[0];
+      return !c || c.status === "ledig";
+    }).length;
+    return {
+      id: p.id,
+      address: `${p.streetName} ${p.streetNumber}`,
+      postalCode: p.postalCode,
+      postalPlace: p.postalPlace,
+      gnr: p.gnr,
+      bnr: p.bnr,
+      unitCount: pUnits,
+      vacantCount: pVacant,
+    };
+  });
 
   const tenants: TenantRow[] = company.properties.flatMap((property) =>
     property.units
@@ -78,11 +115,145 @@ export default async function CompanyDetailPage({
 
   tenants.sort((a, b) => a.name.localeCompare(b.name, "nb"));
 
+  const mapMarkers = company.properties
+    .map(
+      (p) =>
+        `${p.streetName} ${p.streetNumber}, ${p.postalCode} ${p.postalPlace}, Norway`
+    )
+    .join("|");
+
+  return {
+    name: company.name,
+    orgNumber: company.orgNumber,
+    annualRent,
+    totalArea,
+    totalUnits,
+    vacantUnits,
+    properties,
+    tenants,
+    mapMarkers,
+  };
+}
+
+function getSnapshotCompanyData(
+  units: SnapshotUnit[],
+  companyId: string
+): CompanyData | null {
+  const companyUnits = units.filter((u) => u.companyId === companyId);
+  if (companyUnits.length === 0) return null;
+
+  const first = companyUnits[0];
+  const totalUnits = companyUnits.length;
+  const vacantUnits = companyUnits.filter(
+    (u) => !u.status || u.status === "ledig"
+  ).length;
+  const annualRent = companyUnits.reduce(
+    (sum, u) => sum + u.monthlyRent * 12,
+    0
+  );
+  const totalArea = companyUnits.reduce((sum, u) => sum + u.areaSqm, 0);
+
+  // Group by property address
+  const propMap = new Map<
+    string,
+    { first: SnapshotUnit; units: SnapshotUnit[] }
+  >();
+  for (const u of companyUnits) {
+    const addr = `${u.streetName} ${u.streetNumber}`;
+    if (!propMap.has(addr)) {
+      propMap.set(addr, { first: u, units: [] });
+    }
+    propMap.get(addr)!.units.push(u);
+  }
+
+  const properties: PropertyRow[] = [...propMap.values()].map((p) => ({
+    id: `${p.first.streetName}_${p.first.streetNumber}`,
+    address: `${p.first.streetName} ${p.first.streetNumber}`,
+    postalCode: p.first.postalCode,
+    postalPlace: p.first.postalPlace,
+    gnr: p.first.gnr,
+    bnr: p.first.bnr,
+    unitCount: p.units.length,
+    vacantCount: p.units.filter((u) => !u.status || u.status === "ledig")
+      .length,
+  }));
+
+  const tenants: TenantRow[] = companyUnits
+    .filter((u) => u.leaseholderName && u.status === "aktiv")
+    .map((u) => ({
+      id: u.id,
+      name: u.leaseholderName!,
+      email: u.leaseholderEmail,
+      unitNumber: u.unitNumber,
+      address: `${u.streetName} ${u.streetNumber}`,
+      company: first.companyName,
+      areaSqm: u.areaSqm,
+      monthlyRent: u.monthlyRent,
+    }));
+
+  tenants.sort((a, b) => a.name.localeCompare(b.name, "nb"));
+
+  const mapMarkers = [...propMap.values()]
+    .map(
+      (p) =>
+        `${p.first.streetName} ${p.first.streetNumber}, ${p.first.postalCode} ${p.first.postalPlace}, Norway`
+    )
+    .join("|");
+
+  return {
+    name: first.companyName,
+    orgNumber: first.companyOrgNumber,
+    annualRent,
+    totalArea,
+    totalUnits,
+    vacantUnits,
+    properties,
+    tenants,
+    mapMarkers,
+  };
+}
+
+export default async function CompanyDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ companyId: string }>;
+  searchParams: Promise<{ period?: string }>;
+}) {
+  const { companyId } = await params;
+  const { period } = await searchParams;
+  const accountId = await getAccountId();
+  if (!accountId) notFound();
+
+  let data: CompanyData | null;
+  if (period) {
+    const snapData = await getSnapshotData(accountId, period);
+    if (!snapData) notFound();
+    const units = normalizeSnapshots(snapData!);
+    data = getSnapshotCompanyData(units, companyId);
+  } else {
+    data = await getLiveData(accountId, companyId);
+  }
+
+  if (!data) notFound();
+
+  const {
+    name,
+    orgNumber,
+    annualRent,
+    totalArea,
+    totalUnits,
+    vacantUnits,
+    properties,
+    tenants,
+    mapMarkers,
+  } = data;
+
   return (
     <div>
       <div className="mb-1">
         <Link
-          href="/selskaper"
+          href={`/selskaper${period ? `?period=${period}` : ""}`}
           className="text-sm text-gray-400 hover:text-gray-600"
         >
           Selskaper
@@ -90,24 +261,17 @@ export default async function CompanyDetailPage({
         <span className="mx-2 text-gray-300">/</span>
       </div>
       <h1 className="mb-6 text-xl font-semibold text-gray-900">
-        {company.name}
+        {name}
         <span className="ml-2 text-sm font-normal text-gray-400">
-          {company.orgNumber}
+          {orgNumber}
         </span>
       </h1>
 
-      {company.properties.length > 0 && (
+      {mapMarkers && (
         <>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={`/api/staticmap?markers=${encodeURIComponent(
-              company.properties
-                .map(
-                  (p) =>
-                    `${p.streetName} ${p.streetNumber}, ${p.postalCode} ${p.postalPlace}, Norway`
-                )
-                .join("|")
-            )}`}
+            src={`/api/staticmap?markers=${encodeURIComponent(mapMarkers)}`}
             alt="Kart over eiendommer"
             className="mb-6 h-48 w-full rounded-xl object-cover bg-gray-100"
             loading="lazy"
@@ -140,51 +304,49 @@ export default async function CompanyDetailPage({
         />
         <KpiCard
           label="Eiendommer"
-          value={String(company.properties.length)}
+          value={String(properties.length)}
           icon={Building2}
           color="purple"
         />
       </div>
 
-      {company.properties.length > 0 && (
+      {properties.length > 0 && (
         <>
           <h2 className="mb-3 text-sm font-semibold text-gray-700">
-            Eiendommer ({company.properties.length})
+            Eiendommer ({properties.length})
           </h2>
           <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {company.properties.map((property) => {
-              const addr = `${property.streetName} ${property.streetNumber}`;
-              const pUnits = property.units.length;
-              const pVacant = property.units.filter((u) => {
-                const c = u.contracts[0];
-                return !c || c.status === "ledig";
-              }).length;
+            {properties.map((prop) => {
+              const href = period
+                ? `/eiendommer/${encodeURIComponent(prop.id)}?period=${period}`
+                : `/eiendommer/${prop.id}`;
               return (
                 <Link
-                  key={property.id}
-                  href={`/eiendommer/${property.id}`}
+                  key={prop.id}
+                  href={href}
                   className="rounded-xl bg-white border border-gray-100 shadow-sm hover:shadow-md transition-shadow block overflow-hidden"
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
-                    src={`/api/streetview?address=${encodeURIComponent(`${addr}, ${property.postalCode} ${property.postalPlace}`)}`}
-                    alt={addr}
+                    src={`/api/streetview?address=${encodeURIComponent(`${prop.address}, ${prop.postalCode} ${prop.postalPlace}`)}`}
+                    alt={prop.address}
                     className="h-28 w-full object-cover bg-gray-100"
                     loading="lazy"
                   />
                   <div className="p-4">
                     <h3 className="text-sm font-semibold text-gray-900">
-                      {addr}
+                      {prop.address}
                     </h3>
                     <p className="text-xs text-gray-400">
-                      {property.postalCode} {property.postalPlace}
-                      {property.gnr > 0 &&
-                        ` · gnr. ${property.gnr} / bnr. ${property.bnr}`}
+                      {prop.postalCode} {prop.postalPlace}
+                      {prop.gnr != null &&
+                        prop.gnr > 0 &&
+                        ` · gnr. ${prop.gnr} / bnr. ${prop.bnr}`}
                     </p>
                     <p className="mt-1 text-xs text-gray-500">
-                      {pVacant > 0
-                        ? `${pUnits} enheter (${pVacant} ledige)`
-                        : `${pUnits} enheter`}
+                      {prop.vacantCount > 0
+                        ? `${prop.unitCount} enheter (${prop.vacantCount} ledige)`
+                        : `${prop.unitCount} enheter`}
                     </p>
                   </div>
                 </Link>

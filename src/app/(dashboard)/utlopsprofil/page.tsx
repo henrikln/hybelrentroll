@@ -3,21 +3,13 @@ export const dynamic = "force-dynamic";
 import { prisma } from "@/lib/db";
 import { getAccountId } from "@/lib/auth";
 import { ExpiryChart, type ContractBar } from "./expiry-chart";
+import { getSnapshotData, normalizeSnapshots } from "@/lib/period";
 
 function toNum(d: { toNumber(): number } | null | undefined): number {
   return d ? d.toNumber() : 0;
 }
 
-export default async function UtlopsprofilPage() {
-  const accountId = await getAccountId();
-  if (!accountId) {
-    return (
-      <div className="p-12 text-center">
-        <p className="text-sm text-gray-400">Ingen data ennå.</p>
-      </div>
-    );
-  }
-
+async function getLiveContracts(accountId: string): Promise<ContractBar[]> {
   const companies = await prisma.company.findMany({
     where: { accountId },
     include: {
@@ -37,7 +29,7 @@ export default async function UtlopsprofilPage() {
     },
   });
 
-  const contracts: ContractBar[] = companies.flatMap((company) =>
+  return companies.flatMap((company) =>
     company.properties.flatMap((property) =>
       property.units
         .filter((u) => u.contracts[0]?.leaseholder)
@@ -57,6 +49,56 @@ export default async function UtlopsprofilPage() {
         })
     )
   );
+}
+
+function getSnapshotContracts(
+  snapData: NonNullable<Awaited<ReturnType<typeof getSnapshotData>>>
+): ContractBar[] {
+  const units = normalizeSnapshots(snapData);
+  return units
+    .filter((u) => u.leaseholderName && u.status === "aktiv")
+    .map((u) => ({
+      id: u.id,
+      tenant: u.leaseholderName!,
+      unit: u.unitNumber,
+      address: `${u.streetName} ${u.streetNumber}`,
+      company: u.companyName,
+      monthlyRent: u.monthlyRent,
+      startDate: u.startDate?.toISOString().split("T")[0] ?? null,
+      endDate: u.endDate?.toISOString().split("T")[0] ?? null,
+    }));
+}
+
+export default async function UtlopsprofilPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ period?: string }>;
+}) {
+  const accountId = await getAccountId();
+  if (!accountId) {
+    return (
+      <div className="p-12 text-center">
+        <p className="text-sm text-gray-400">Ingen data ennå.</p>
+      </div>
+    );
+  }
+
+  const { period } = await searchParams;
+
+  let contracts: ContractBar[];
+  if (period) {
+    const snapData = await getSnapshotData(accountId, period);
+    if (!snapData) {
+      return (
+        <div className="p-12 text-center">
+          <p className="text-sm text-gray-400">Ingen data for valgt periode.</p>
+        </div>
+      );
+    }
+    contracts = getSnapshotContracts(snapData);
+  } else {
+    contracts = await getLiveContracts(accountId);
+  }
 
   contracts.sort((a, b) => {
     if (!a.endDate && !b.endDate) return a.tenant.localeCompare(b.tenant, "nb");

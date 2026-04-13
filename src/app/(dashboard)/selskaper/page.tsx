@@ -2,25 +2,28 @@ export const dynamic = "force-dynamic";
 
 import { prisma } from "@/lib/db";
 import { getAccountId } from "@/lib/auth";
-import { formatNOK, formatDecimal } from "@/lib/format";
-import { Building2, Home, Users, Banknote, Ruler, CalendarClock } from "lucide-react";
+import { formatNOK } from "@/lib/format";
+import { Building2, Home, Users, Banknote, Ruler } from "lucide-react";
 import { KpiCard } from "@/components/dashboard/kpi-card";
+import { getSnapshotData, normalizeSnapshots } from "@/lib/period";
 import Link from "next/link";
 
 function toNum(d: { toNumber(): number } | null | undefined): number {
   return d ? d.toNumber() : 0;
 }
 
-export default async function SelskaperPage() {
-  const accountId = await getAccountId();
-  if (!accountId) {
-    return (
-      <div className="p-12 text-center">
-        <p className="text-sm text-gray-400">Ingen data ennå.</p>
-      </div>
-    );
-  }
+interface CompanyCard {
+  id: string;
+  name: string;
+  orgNumber: string;
+  propertyCount: number;
+  totalUnits: number;
+  vacantUnits: number;
+  annualRent: number;
+  totalArea: number;
+}
 
+async function getLiveData(accountId: string): Promise<CompanyCard[]> {
   const companies = await prisma.company.findMany({
     where: { accountId },
     include: {
@@ -28,9 +31,7 @@ export default async function SelskaperPage() {
         include: {
           units: {
             include: {
-              contracts: {
-                orderBy: { createdAt: "desc" },
-              },
+              contracts: { orderBy: { createdAt: "desc" } },
             },
           },
         },
@@ -39,7 +40,7 @@ export default async function SelskaperPage() {
     orderBy: { name: "asc" },
   });
 
-  const companyCards = companies.map((company) => {
+  return companies.map((company) => {
     const allUnits = company.properties.flatMap((p) => p.units);
     const totalUnits = allUnits.length;
     const vacantUnits = allUnits.filter((u) => {
@@ -63,6 +64,76 @@ export default async function SelskaperPage() {
       totalArea,
     };
   });
+}
+
+function getSnapshotCards(
+  snapData: NonNullable<Awaited<ReturnType<typeof getSnapshotData>>>
+): CompanyCard[] {
+  const units = normalizeSnapshots(snapData);
+  const companyMap = new Map<
+    string,
+    { id: string; name: string; orgNumber: string; addresses: Set<string>; units: typeof units }
+  >();
+
+  for (const u of units) {
+    if (!companyMap.has(u.companyId)) {
+      companyMap.set(u.companyId, {
+        id: u.companyId,
+        name: u.companyName,
+        orgNumber: u.companyOrgNumber,
+        addresses: new Set(),
+        units: [],
+      });
+    }
+    const entry = companyMap.get(u.companyId)!;
+    entry.addresses.add(`${u.streetName} ${u.streetNumber}`);
+    entry.units.push(u);
+  }
+
+  return [...companyMap.values()].map((c) => ({
+    id: c.id,
+    name: c.name,
+    orgNumber: c.orgNumber,
+    propertyCount: c.addresses.size,
+    totalUnits: c.units.length,
+    vacantUnits: c.units.filter((u) => !u.status || u.status === "ledig").length,
+    annualRent: c.units.reduce((sum, u) => sum + u.monthlyRent * 12, 0),
+    totalArea: c.units.reduce((sum, u) => sum + u.areaSqm, 0),
+  }));
+}
+
+export default async function SelskaperPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ period?: string }>;
+}) {
+  const accountId = await getAccountId();
+  if (!accountId) {
+    return (
+      <div className="p-12 text-center">
+        <p className="text-sm text-gray-400">Ingen data ennå.</p>
+      </div>
+    );
+  }
+
+  const { period } = await searchParams;
+
+  let companyCards: CompanyCard[];
+  if (period) {
+    const snapData = await getSnapshotData(accountId, period);
+    if (!snapData) {
+      return (
+        <div className="p-12 text-center">
+          <p className="text-sm text-gray-400">Ingen data for valgt periode.</p>
+        </div>
+      );
+    }
+    companyCards = getSnapshotCards(snapData);
+  } else {
+    companyCards = await getLiveData(accountId);
+  }
+
+  companyCards.sort((a, b) => a.name.localeCompare(b.name, "nb"));
 
   const totalAnnualRent = companyCards.reduce((s, c) => s + c.annualRent, 0);
   const totalAreaAll = companyCards.reduce((s, c) => s + c.totalArea, 0);
@@ -112,7 +183,7 @@ export default async function SelskaperPage() {
           {companyCards.map((company) => (
             <Link
               key={company.id}
-              href={`/selskaper/${company.id}`}
+              href={`/selskaper/${company.id}${period ? `?period=${period}` : ""}`}
               className="rounded-xl bg-white border border-gray-100 shadow-sm p-6 hover:shadow-md transition-shadow block"
             >
               <div className="flex items-center gap-3 mb-4">

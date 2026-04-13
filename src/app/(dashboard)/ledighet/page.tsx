@@ -4,21 +4,25 @@ import { prisma } from "@/lib/db";
 import { getAccountId } from "@/lib/auth";
 import { formatNOK, formatDate } from "@/lib/format";
 import { KeyRound } from "lucide-react";
+import { getSnapshotData, normalizeSnapshots } from "@/lib/period";
 
 function toNum(d: { toNumber(): number } | null | undefined): number {
   return d ? d.toNumber() : 0;
 }
 
-export default async function LedighetPage() {
-  const accountId = await getAccountId();
-  if (!accountId) {
-    return (
-      <div className="p-12 text-center">
-        <p className="text-sm text-gray-400">Ingen data ennå.</p>
-      </div>
-    );
-  }
+interface VacantUnit {
+  id: string;
+  company: string;
+  address: string;
+  unitNumber: string;
+  unitType: string;
+  areaSqm: number;
+  floor: number | null;
+  lastRent: number | null;
+  vacantSince: Date | null;
+}
 
+async function getLiveVacancies(accountId: string): Promise<VacantUnit[]> {
   const companies = await prisma.company.findMany({
     where: { accountId },
     include: {
@@ -37,7 +41,7 @@ export default async function LedighetPage() {
     },
   });
 
-  const vacantUnits = companies.flatMap((company) =>
+  return companies.flatMap((company) =>
     company.properties.flatMap((property) =>
       property.units
         .filter((u) => {
@@ -60,6 +64,57 @@ export default async function LedighetPage() {
         })
     )
   );
+}
+
+function getSnapshotVacancies(
+  snapData: NonNullable<Awaited<ReturnType<typeof getSnapshotData>>>
+): VacantUnit[] {
+  const units = normalizeSnapshots(snapData);
+  return units
+    .filter((u) => !u.status || u.status === "ledig")
+    .map((u) => ({
+      id: u.id,
+      company: u.companyName,
+      address: `${u.streetName} ${u.streetNumber}`,
+      unitNumber: u.unitNumber,
+      unitType: u.unitType,
+      areaSqm: u.areaSqm,
+      floor: u.floor,
+      lastRent: u.monthlyRent > 0 ? u.monthlyRent * 12 : null,
+      vacantSince: u.endDate,
+    }));
+}
+
+export default async function LedighetPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ period?: string }>;
+}) {
+  const accountId = await getAccountId();
+  if (!accountId) {
+    return (
+      <div className="p-12 text-center">
+        <p className="text-sm text-gray-400">Ingen data ennå.</p>
+      </div>
+    );
+  }
+
+  const { period } = await searchParams;
+
+  let vacantUnits: VacantUnit[];
+  if (period) {
+    const snapData = await getSnapshotData(accountId, period);
+    if (!snapData) {
+      return (
+        <div className="p-12 text-center">
+          <p className="text-sm text-gray-400">Ingen data for valgt periode.</p>
+        </div>
+      );
+    }
+    vacantUnits = getSnapshotVacancies(snapData);
+  } else {
+    vacantUnits = await getLiveVacancies(accountId);
+  }
 
   vacantUnits.sort((a, b) => a.address.localeCompare(b.address, "nb"));
 

@@ -4,21 +4,25 @@ import { prisma } from "@/lib/db";
 import { getAccountId } from "@/lib/auth";
 import { Users } from "lucide-react";
 import { TenantTable } from "@/components/dashboard/tenant-table";
+import { getSnapshotData, normalizeSnapshots } from "@/lib/period";
 
 function toNum(d: { toNumber(): number } | null | undefined): number {
   return d ? d.toNumber() : 0;
 }
 
-export default async function LeietakerePage() {
-  const accountId = await getAccountId();
-  if (!accountId) {
-    return (
-      <div className="p-12 text-center">
-        <p className="text-sm text-gray-400">Ingen data ennå.</p>
-      </div>
-    );
-  }
+interface TenantRow {
+  id: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  address: string;
+  unitNumber: string;
+  company: string;
+  areaSqm: number;
+  monthlyRent: number;
+}
 
+async function getLiveTenants(accountId: string): Promise<TenantRow[]> {
   const companies = await prisma.company.findMany({
     where: { accountId },
     include: {
@@ -38,7 +42,7 @@ export default async function LeietakerePage() {
     },
   });
 
-  const tenants = companies.flatMap((company) =>
+  return companies.flatMap((company) =>
     company.properties.flatMap((property) =>
       property.units
         .filter((u) => {
@@ -62,6 +66,57 @@ export default async function LeietakerePage() {
         })
     )
   );
+}
+
+function getSnapshotTenants(
+  snapData: NonNullable<Awaited<ReturnType<typeof getSnapshotData>>>
+): TenantRow[] {
+  const units = normalizeSnapshots(snapData);
+  return units
+    .filter((u) => u.leaseholderName && u.status === "aktiv")
+    .map((u) => ({
+      id: u.id,
+      name: u.leaseholderName!,
+      email: u.leaseholderEmail,
+      phone: u.leaseholderPhone,
+      address: `${u.streetName} ${u.streetNumber}`,
+      unitNumber: u.unitNumber,
+      company: u.companyName,
+      areaSqm: u.areaSqm,
+      monthlyRent: u.monthlyRent,
+    }));
+}
+
+export default async function LeietakerePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ period?: string }>;
+}) {
+  const accountId = await getAccountId();
+  if (!accountId) {
+    return (
+      <div className="p-12 text-center">
+        <p className="text-sm text-gray-400">Ingen data ennå.</p>
+      </div>
+    );
+  }
+
+  const { period } = await searchParams;
+
+  let tenants: TenantRow[];
+  if (period) {
+    const snapData = await getSnapshotData(accountId, period);
+    if (!snapData) {
+      return (
+        <div className="p-12 text-center">
+          <p className="text-sm text-gray-400">Ingen data for valgt periode.</p>
+        </div>
+      );
+    }
+    tenants = getSnapshotTenants(snapData);
+  } else {
+    tenants = await getLiveTenants(accountId);
+  }
 
   tenants.sort((a, b) => a.name.localeCompare(b.name, "nb"));
 
