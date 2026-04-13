@@ -99,6 +99,7 @@ model User {
   name      String?
   role      UserRole @default(member)
   active      Boolean   @default(true)
+  globalAdmin Boolean   @default(false) @map("global_admin")
   lastLoginAt DateTime? @map("last_login_at")
   createdAt   DateTime  @default(now()) @map("created_at")
   updatedAt   DateTime  @updatedAt @map("updated_at")

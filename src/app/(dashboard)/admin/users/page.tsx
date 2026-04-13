@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { prisma } from "@/lib/db";
-import { requireAdmin } from "@/lib/auth";
+import { requireAdmin, getIsGlobalAdmin } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import {
   Users,
@@ -15,11 +15,15 @@ import {
 
 async function addUserToAccount(formData: FormData) {
   "use server";
-  await requireAdmin();
+  const myAccountId = await requireAdmin();
+  const isGlobal = await getIsGlobalAdmin();
 
   const email = (formData.get("email") as string)?.toLowerCase().trim();
   const accountId = formData.get("accountId") as string;
   if (!email || !accountId) return;
+
+  // Tenant admins can only add users to their own account
+  if (!isGlobal && accountId !== myAccountId) return;
 
   // Check account exists
   const account = await prisma.account.findUnique({ where: { id: accountId } });
@@ -44,13 +48,17 @@ async function addUserToAccount(formData: FormData) {
 
 async function removeUser(formData: FormData) {
   "use server";
-  await requireAdmin();
+  const myAccountId = await requireAdmin();
+  const isGlobal = await getIsGlobalAdmin();
 
   const userId = formData.get("userId") as string;
   if (!userId) return;
 
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) return;
+
+  // Tenant admins can only remove users from their own account
+  if (!isGlobal && user.accountId !== myAccountId) return;
 
   // Remove user and their allowed sender entry
   await prisma.user.delete({ where: { id: userId } });
@@ -61,11 +69,16 @@ async function removeUser(formData: FormData) {
 
 async function toggleAdmin(formData: FormData) {
   "use server";
-  await requireAdmin();
+  const myAccountId = await requireAdmin();
+  const isGlobal = await getIsGlobalAdmin();
 
   const userId = formData.get("userId") as string;
   const currentRole = formData.get("currentRole") as string;
   if (!userId) return;
+
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) return;
+  if (!isGlobal && user.accountId !== myAccountId) return;
 
   await prisma.user.update({
     where: { id: userId },
@@ -77,11 +90,16 @@ async function toggleAdmin(formData: FormData) {
 
 async function toggleActive(formData: FormData) {
   "use server";
-  await requireAdmin();
+  const myAccountId = await requireAdmin();
+  const isGlobal = await getIsGlobalAdmin();
 
   const userId = formData.get("userId") as string;
   const currentActive = formData.get("currentActive") as string;
   if (!userId) return;
+
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) return;
+  if (!isGlobal && user.accountId !== myAccountId) return;
 
   await prisma.user.update({
     where: { id: userId },
@@ -92,9 +110,11 @@ async function toggleActive(formData: FormData) {
 }
 
 export default async function AdminUsersPage() {
-  await requireAdmin();
+  const accountId = await requireAdmin();
+  const isGlobalAdmin = await getIsGlobalAdmin();
 
   const accounts = await prisma.account.findMany({
+    where: isGlobalAdmin ? undefined : { id: accountId },
     include: {
       users: { orderBy: { createdAt: "asc" } },
       companies: { select: { id: true, name: true } },

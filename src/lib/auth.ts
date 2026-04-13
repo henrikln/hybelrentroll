@@ -8,10 +8,12 @@ declare module "next-auth" {
   interface Session {
     accountId?: string;
     isAdmin?: boolean;
+    isGlobalAdmin?: boolean;
   }
   interface User {
     accountId?: string;
     isAdmin?: boolean;
+    isGlobalAdmin?: boolean;
   }
 }
 
@@ -65,6 +67,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             email,
             name: user.name ?? null,
             role: isSuperAdmin ? "admin" : "member",
+            globalAdmin: isSuperAdmin,
           },
         });
 
@@ -75,6 +78,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 
         user.accountId = accountId;
         user.isAdmin = dbUser.role === "admin";
+        user.isGlobalAdmin = dbUser.globalAdmin;
       } catch (err) {
         console.error("[auth] Failed to resolve account:", err);
       }
@@ -85,6 +89,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       if (user?.accountId) {
         token.accountId = user.accountId;
         token.isAdmin = user.isAdmin;
+        token.isGlobalAdmin = user.isGlobalAdmin;
       }
       // If accountId not in token yet (e.g. existing session), look it up
       if (!token.accountId && token.email) {
@@ -98,6 +103,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         const dbUser = await prisma.user.findUnique({ where: { email } });
         if (dbUser) {
           token.isAdmin = dbUser.role === "admin";
+          token.isGlobalAdmin = dbUser.globalAdmin;
         }
       }
       return token;
@@ -105,6 +111,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     async session({ session, token }) {
       session.accountId = token.accountId as string | undefined;
       session.isAdmin = token.isAdmin as boolean | undefined;
+      session.isGlobalAdmin = token.isGlobalAdmin as boolean | undefined;
       return session;
     },
     authorized({ auth, request }) {
@@ -145,11 +152,31 @@ export async function getIsAdmin(): Promise<boolean> {
 }
 
 /**
- * Require admin access. Returns accountId or throws redirect.
+ * Require admin access (global or tenant). Returns accountId or throws redirect.
  */
 export async function requireAdmin(): Promise<string> {
   const session = await auth();
   if (!session?.isAdmin) {
+    const { redirect } = await import("next/navigation");
+    redirect("/");
+  }
+  return session!.accountId!;
+}
+
+/**
+ * Check if the current user is a global admin.
+ */
+export async function getIsGlobalAdmin(): Promise<boolean> {
+  const session = await auth();
+  return session?.isGlobalAdmin === true;
+}
+
+/**
+ * Require global admin access. Returns accountId or throws redirect.
+ */
+export async function requireGlobalAdmin(): Promise<string> {
+  const session = await auth();
+  if (!session?.isGlobalAdmin) {
     const { redirect } = await import("next/navigation");
     redirect("/");
   }

@@ -1,40 +1,26 @@
 export const dynamic = "force-dynamic";
 
 import { prisma } from "@/lib/db";
-import { requireAdmin } from "@/lib/auth";
+import { requireAdmin, getIsGlobalAdmin } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { Mail, Plus, Trash2 } from "lucide-react";
 
-async function getSenders() {
-  return prisma.allowedSender.findMany({
-    include: { account: { select: { name: true } } },
-    orderBy: { createdAt: "desc" },
-  });
-}
-
 async function addSender(formData: FormData) {
   "use server";
-  await requireAdmin();
+  const myAccountId = await requireAdmin();
+  const isGlobal = await getIsGlobalAdmin();
 
   const email = (formData.get("email") as string)?.toLowerCase().trim();
   const note = (formData.get("note") as string)?.trim() || null;
 
   if (!email) return;
 
-  // Find an existing account or create one
   const existing = await prisma.allowedSender.findUnique({ where: { email } });
-  if (existing) return; // already exists
+  if (existing) return;
 
-  // Use the first account (single-tenant for now)
-  let account = await prisma.account.findFirst();
-  if (!account) {
-    account = await prisma.account.create({
-      data: { name: "Standard" },
-    });
-  }
-
+  // Tenant admins add senders to their own account; global admins also use their own
   await prisma.allowedSender.create({
-    data: { accountId: account.id, email, note },
+    data: { accountId: myAccountId, email, note },
   });
 
   revalidatePath("/admin/senders");
@@ -42,18 +28,31 @@ async function addSender(formData: FormData) {
 
 async function removeSender(formData: FormData) {
   "use server";
-  await requireAdmin();
+  const myAccountId = await requireAdmin();
+  const isGlobal = await getIsGlobalAdmin();
 
   const id = formData.get("id") as string;
   if (!id) return;
+
+  const sender = await prisma.allowedSender.findUnique({ where: { id } });
+  if (!sender) return;
+
+  // Tenant admins can only remove senders from their own account
+  if (!isGlobal && sender.accountId !== myAccountId) return;
 
   await prisma.allowedSender.delete({ where: { id } });
   revalidatePath("/admin/senders");
 }
 
 export default async function SendersPage() {
-  await requireAdmin();
-  const senders = await getSenders();
+  const accountId = await requireAdmin();
+  const isGlobalAdmin = await getIsGlobalAdmin();
+
+  const senders = await prisma.allowedSender.findMany({
+    where: isGlobalAdmin ? undefined : { accountId },
+    include: { account: { select: { name: true } } },
+    orderBy: { createdAt: "desc" },
+  });
 
   return (
     <div>

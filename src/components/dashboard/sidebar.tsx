@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutGrid,
-  Table2,
   KeyRound,
   BarChart3,
   Building2,
@@ -12,7 +11,6 @@ import {
   Users,
   Upload,
   Settings,
-  Key,
   Mail,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -52,7 +50,6 @@ const navigation: NavSection[] = [
     title: "System",
     items: [
       { label: "Import", href: "/import", icon: Upload },
-      { label: "API-nøkler", href: "/admin/api-keys", icon: Key },
       { label: "Avsendere", href: "/admin/senders", icon: Mail },
       { label: "Brukere", href: "/admin/users", icon: Users },
       { label: "Innstillinger", href: "/admin/settings", icon: Settings },
