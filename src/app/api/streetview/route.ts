@@ -16,6 +16,8 @@ export async function GET(req: NextRequest) {
   url.searchParams.set("location", `${address}, Norway`);
   url.searchParams.set("key", apiKey);
   url.searchParams.set("source", "outdoor");
+  const fov = req.nextUrl.searchParams.get("fov");
+  if (fov) url.searchParams.set("fov", fov);
 
   const res = await fetch(url.toString());
 

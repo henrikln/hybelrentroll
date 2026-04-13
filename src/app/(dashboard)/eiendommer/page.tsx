@@ -90,7 +90,7 @@ export default async function EiendommerPage() {
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={`/api/streetview?address=${encodeURIComponent(`${property.name}, ${property.postalCode} ${property.postalPlace}`)}`}
+                src={`/api/streetview?fov=120&address=${encodeURIComponent(`${property.name}, ${property.postalCode} ${property.postalPlace}`)}`}
                 alt={property.name}
                 className="h-32 w-full object-cover bg-gray-100"
                 loading="lazy"
