@@ -131,19 +131,10 @@ async function renameAccount(formData: FormData) {
 }
 
 export default async function AdminUsersPage() {
-  let accountId: string;
-  let isGlobalAdmin: boolean;
-  try {
-    accountId = await requireAdmin();
-    isGlobalAdmin = await getIsGlobalAdmin();
-  } catch (err) {
-    console.error("[admin/users] auth error:", err);
-    throw err;
-  }
+  const accountId = await requireAdmin();
+  const isGlobalAdmin = await getIsGlobalAdmin();
 
-  let accounts;
-  try {
-    accounts = await prisma.account.findMany({
+  const accounts = await prisma.account.findMany({
     where: isGlobalAdmin ? undefined : { id: accountId },
     include: {
       users: { orderBy: { createdAt: "asc" } },
@@ -152,10 +143,6 @@ export default async function AdminUsersPage() {
     },
     orderBy: { createdAt: "desc" },
   });
-  } catch (err) {
-    console.error("[admin/users] query error:", err);
-    throw err;
-  }
 
   return (
     <div>
