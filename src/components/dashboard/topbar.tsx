@@ -1,4 +1,6 @@
 import Image from "next/image";
+import { prisma } from "@/lib/db";
+import { PeriodSelector } from "./period-selector";
 
 async function getSession() {
   try {
@@ -12,6 +14,7 @@ async function getSession() {
 export async function Topbar() {
   const session = await getSession();
   const user = session?.user;
+  const accountId = (session as { accountId?: string } | null)?.accountId;
 
   const userName = user?.name ?? "Bruker";
   const userEmail = user?.email ?? "";
@@ -22,8 +25,23 @@ export async function Topbar() {
     .toUpperCase()
     .slice(0, 2);
 
+  // Get available report periods for this account
+  let periods: string[] = [];
+  if (accountId) {
+    const snapshots = await prisma.rentRollSnapshot.findMany({
+      where: { company: { accountId } },
+      select: { reportDate: true },
+      distinct: ["reportDate"],
+      orderBy: { reportDate: "desc" },
+    });
+    periods = snapshots.map((s) => s.reportDate.toISOString().split("T")[0]);
+  }
+
   return (
-    <header className="sticky top-0 z-20 flex h-16 items-center justify-end border-b border-gray-100 bg-white px-6">
+    <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-gray-100 bg-white px-6">
+      <div>
+        {periods.length > 1 && <PeriodSelector periods={periods} />}
+      </div>
       <div className="flex items-center gap-4">
         <div className="text-right hidden sm:block">
           <p className="text-sm font-medium text-gray-900">{userName}</p>

@@ -1,221 +1,132 @@
-"use client";
+export const dynamic = "force-dynamic";
 
-import { useState, useCallback } from "react";
-import { Upload, FileSpreadsheet, CheckCircle, AlertCircle } from "lucide-react";
+import { prisma } from "@/lib/db";
+import { getAccountId } from "@/lib/auth";
+import { FileSpreadsheet } from "lucide-react";
+import { ImportUploader } from "./import-uploader";
 
-interface ImportEvent {
-  unitKey: string;
-  eventType: string;
-  description: string;
-}
+export default async function ImportPage() {
+  const accountId = await getAccountId();
 
-interface ImportResult {
-  orgName: string;
-  orgNumber: string | null;
-  reportDate: string | null;
-  totalRows: number;
-  parsedRows: number;
-  errorCount: number;
-  errors: { row: number; field: string; message: string }[];
-  properties: string[];
-  events: ImportEvent[];
-  snapshotCount: number;
-}
+  const imports = accountId
+    ? await prisma.rentRollImport.findMany({
+        where: { accountId },
+        include: {
+          company: { select: { name: true } },
+          snapshots: {
+            select: { reportDate: true },
+            distinct: ["reportDate" as const],
+            take: 1,
+          },
+        },
+        orderBy: { createdAt: "desc" },
+        take: 50,
+      })
+    : [];
 
-export default function ImportPage() {
-  const [isDragging, setIsDragging] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [result, setResult] = useState<ImportResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const processFile = useCallback(async (file: File) => {
-    if (!file.name.endsWith(".xlsx")) {
-      setError("Kun .xlsx-filer støttes");
-      return;
-    }
-
-    setIsProcessing(true);
-    setError(null);
-    setResult(null);
-
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-
-      const res = await fetch("/api/internal/upload", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!res.ok) {
-        throw new Error(`Feil ved opplasting: ${res.statusText}`);
-      }
-
-      const data = await res.json();
-      setResult(data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Ukjent feil");
-    } finally {
-      setIsProcessing(false);
-    }
-  }, []);
-
-  const handleDrop = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault();
-      setIsDragging(false);
-      const file = e.dataTransfer.files[0];
-      if (file) processFile(file);
-    },
-    [processFile]
-  );
-
-  const handleFileSelect = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (file) processFile(file);
-    },
-    [processFile]
-  );
+  const rows = imports.map((imp) => ({
+    id: imp.id,
+    filename: imp.filename,
+    company: imp.company?.name ?? "—",
+    reportDate: imp.snapshots[0]?.reportDate
+      ? imp.snapshots[0].reportDate.toLocaleDateString("nb-NO")
+      : "—",
+    status: imp.status,
+    rowsImported: imp.rowsImported,
+    rowsTotal: imp.rowsTotal,
+    source: imp.source,
+    createdAt: imp.createdAt.toLocaleString("nb-NO", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    }),
+  }));
 
   return (
     <div>
       <h1 className="mb-6 text-xl font-semibold text-gray-900">Import</h1>
 
-      {/* Upload zone */}
-      <div
-        className={`mb-6 rounded-xl border-2 border-dashed p-12 text-center transition-colors ${
-          isDragging
-            ? "border-purple-400 bg-purple-50"
-            : "border-gray-200 bg-white"
-        }`}
-        onDragOver={(e) => {
-          e.preventDefault();
-          setIsDragging(true);
-        }}
-        onDragLeave={() => setIsDragging(false)}
-        onDrop={handleDrop}
-      >
-        <FileSpreadsheet className="mx-auto mb-4 h-12 w-12 text-gray-300" />
-        <p className="mb-2 text-sm text-gray-600">
-          Dra og slipp en .xlsx-fil hit, eller
-        </p>
-        <label>
-          <input
-            type="file"
-            accept=".xlsx"
-            className="hidden"
-            onChange={handleFileSelect}
-          />
-          <span className="inline-flex h-9 items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium shadow-sm hover:bg-accent hover:text-accent-foreground cursor-pointer">
-            Velg fil
-          </span>
-        </label>
-        {isProcessing && (
-          <p className="mt-4 text-sm text-purple-600">Behandler fil...</p>
+      <ImportUploader />
+
+      {/* Import history */}
+      <div className="mt-6 rounded-xl bg-white border border-gray-100 shadow-sm">
+        <div className="px-5 py-4 border-b border-gray-50">
+          <h3 className="text-sm font-semibold text-gray-900">
+            Importhistorikk
+          </h3>
+        </div>
+
+        {rows.length === 0 ? (
+          <div className="p-12 text-center">
+            <FileSpreadsheet className="mx-auto mb-3 h-10 w-10 text-gray-200" />
+            <p className="text-sm text-gray-400">Ingen importer ennå</p>
+          </div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-100 text-left text-xs text-gray-400">
+                <th className="px-5 py-3 font-medium">Rapportdato</th>
+                <th className="px-5 py-3 font-medium">Selskap</th>
+                <th className="px-5 py-3 font-medium">Filnavn</th>
+                <th className="px-5 py-3 font-medium">Rader</th>
+                <th className="px-5 py-3 font-medium">Kilde</th>
+                <th className="px-5 py-3 font-medium">Status</th>
+                <th className="px-5 py-3 font-medium">Importert</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr
+                  key={row.id}
+                  className="border-b border-gray-50 last:border-0"
+                >
+                  <td className="px-5 py-3 font-medium text-gray-900">
+                    {row.reportDate}
+                  </td>
+                  <td className="px-5 py-3 text-gray-600">{row.company}</td>
+                  <td className="px-5 py-3 font-mono text-xs text-gray-500">
+                    {row.filename}
+                  </td>
+                  <td className="px-5 py-3 text-gray-600">
+                    {row.rowsImported ?? "—"} / {row.rowsTotal ?? "—"}
+                  </td>
+                  <td className="px-5 py-3">
+                    <span
+                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                        row.source === "email"
+                          ? "bg-blue-50 text-blue-700"
+                          : "bg-gray-100 text-gray-600"
+                      }`}
+                    >
+                      {row.source === "email" ? "E-post" : "Opplasting"}
+                    </span>
+                  </td>
+                  <td className="px-5 py-3">
+                    <span
+                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                        row.status === "completed"
+                          ? "bg-green-50 text-green-700"
+                          : row.status === "failed"
+                            ? "bg-red-50 text-red-600"
+                            : "bg-amber-50 text-amber-600"
+                      }`}
+                    >
+                      {row.status === "completed"
+                        ? "Fullført"
+                        : row.status === "failed"
+                          ? "Feilet"
+                          : "Behandler"}
+                    </span>
+                  </td>
+                  <td className="px-5 py-3 text-gray-400">{row.createdAt}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
       </div>
-
-      {/* Error */}
-      {error && (
-        <div className="mb-6 flex items-center gap-2 rounded-lg bg-red-50 p-4 text-sm text-red-700">
-          <AlertCircle className="h-4 w-4" />
-          {error}
-        </div>
-      )}
-
-      {/* Results */}
-      {result && (
-        <div className="rounded-xl bg-white border border-gray-100 shadow-sm p-6">
-          <div className="flex items-center gap-2 mb-4">
-            <CheckCircle className="h-5 w-5 text-emerald-500" />
-            <h3 className="text-base font-semibold text-gray-900">
-              Import fullført
-            </h3>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4 mb-4 sm:grid-cols-4">
-            <div>
-              <p className="text-xs text-gray-400">Organisasjon</p>
-              <p className="text-sm font-medium">
-                {result.orgName}
-                {result.orgNumber && (
-                  <span className="text-gray-400"> ({result.orgNumber})</span>
-                )}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs text-gray-400">Rapportdato</p>
-              <p className="text-sm font-medium">{result.reportDate ?? "—"}</p>
-            </div>
-            <div>
-              <p className="text-xs text-gray-400">Rader importert</p>
-              <p className="text-sm font-medium">
-                {result.parsedRows} / {result.totalRows}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs text-gray-400">Eiendommer</p>
-              <p className="text-sm font-medium">{result.properties.length}</p>
-            </div>
-          </div>
-
-          {result.properties.length > 0 && (
-            <div className="mb-4">
-              <p className="text-xs text-gray-400 mb-1">Eiendommer funnet</p>
-              <div className="flex flex-wrap gap-2">
-                {result.properties.map((p) => (
-                  <span
-                    key={p}
-                    className="rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-700"
-                  >
-                    {p}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {result.events && result.events.length > 0 && (
-            <div className="mb-4">
-              <p className="text-xs text-gray-400 mb-1">
-                {result.events.length} hendelser oppdaget
-              </p>
-              <div className="max-h-60 overflow-auto rounded bg-purple-50 p-3 text-xs space-y-1">
-                {result.events.map((e, i) => (
-                  <div key={i} className="flex items-start gap-2">
-                    <span className="mt-0.5 h-1.5 w-1.5 rounded-full bg-purple-400 shrink-0" />
-                    <span className="text-gray-700">{e.description}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {result.events && result.events.length === 0 && result.snapshotCount > 0 && (
-            <div className="mb-4">
-              <p className="text-xs text-gray-400">
-                {result.snapshotCount} snapshots lagret — ingen endringer siden forrige import
-              </p>
-            </div>
-          )}
-
-          {result.errors.length > 0 && (
-            <div>
-              <p className="text-xs text-red-500 mb-1">
-                {result.errorCount} feil
-              </p>
-              <div className="max-h-40 overflow-auto rounded bg-red-50 p-3 text-xs text-red-700">
-                {result.errors.map((e, i) => (
-                  <p key={i}>
-                    Rad {e.row}: {e.field} — {e.message}
-                  </p>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }

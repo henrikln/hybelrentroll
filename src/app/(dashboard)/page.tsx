@@ -6,12 +6,14 @@ import { PropertyList } from "@/components/dashboard/property-list";
 import { formatNOK, formatDecimal } from "@/lib/format";
 import { prisma } from "@/lib/db";
 import { getAccountId } from "@/lib/auth";
+import { getSnapshotData } from "@/lib/period";
 
-function toNum(d: { toNumber(): number } | null | undefined): number {
-  return d ? d.toNumber() : 0;
+function toNum(d: { toNumber(): number } | number | null | undefined): number {
+  if (d === null || d === undefined) return 0;
+  return typeof d === "number" ? d : d.toNumber();
 }
 
-async function getData(accountId: string) {
+async function getDataFromLiveTables(accountId: string) {
   const companies = await prisma.company.findMany({
     where: { accountId },
     include: {
@@ -71,7 +73,6 @@ async function getData(accountId: string) {
     })
   );
 
-  // Sort alphabetically by address
   propertyRows.sort((a, b) => a.name.localeCompare(b.name, "nb"));
 
   const totalAnnualized = propertyRows.reduce(
@@ -79,7 +80,6 @@ async function getData(accountId: string) {
     0
   );
 
-  // WALT calculation (weighted by rent)
   const now = new Date();
   let weightedYears = 0;
   let totalRentForWalt = 0;
@@ -101,15 +101,117 @@ async function getData(accountId: string) {
     }
   }
   const walt = totalRentForWalt > 0 ? weightedYears / totalRentForWalt : 0;
-
   const totalArea = propertyRows.reduce((sum, p) => sum + p.areaSqm, 0);
 
-  return { companies, propertyRows, totalAnnualized, walt, totalArea };
+  return { companyCount: companies.length, propertyRows, totalAnnualized, walt, totalArea };
 }
 
-export default async function OversiktPage() {
-  const accountId = await getAccountId();
+function getDataFromSnapshots(
+  snapshots: Awaited<ReturnType<typeof getSnapshotData>>
+) {
+  if (!snapshots) return null;
+  const { reportDate, snapshots: snaps } = snapshots;
 
+  // Group snapshots by property address
+  const propertyMap = new Map<
+    string,
+    {
+      companyName: string;
+      name: string;
+      units: typeof snaps;
+    }
+  >();
+
+  for (const snap of snaps) {
+    const addr = `${snap.streetName} ${snap.streetNumber}`;
+    if (!propertyMap.has(addr)) {
+      propertyMap.set(addr, {
+        companyName: snap.company.name,
+        name: addr,
+        units: [],
+      });
+    }
+    propertyMap.get(addr)!.units.push(snap);
+  }
+
+  const companyNames = new Set<string>();
+  const propertyRows = [...propertyMap.values()].map((prop) => {
+    companyNames.add(prop.companyName);
+    const totalUnits = prop.units.length;
+    const vacantUnits = prop.units.filter(
+      (u) => !u.status || u.status === "ledig"
+    ).length;
+    const annualizedRent = prop.units.reduce(
+      (sum, u) => toNum(u.monthlyRent) * 12 + sum,
+      0
+    );
+    const totalArea = prop.units.reduce(
+      (sum, u) => toNum(u.areaSqm) + sum,
+      0
+    );
+
+    return {
+      id: prop.name,
+      companyName: prop.companyName,
+      name: prop.name,
+      annualizedRent,
+      areaSqm: totalArea,
+      totalUnits,
+      vacantUnits,
+      units: prop.units.map((u) => ({
+        id: u.id,
+        unitNumber: u.unitNumber || u.customNumber || "—",
+        unitType: u.unitType,
+        areaSqm: toNum(u.areaSqm),
+        floor: u.floor,
+        status: u.status ?? "ledig",
+        leaseholderName: u.leaseholderName,
+        monthlyRent: toNum(u.monthlyRent),
+      })),
+    };
+  });
+
+  propertyRows.sort((a, b) => a.name.localeCompare(b.name, "nb"));
+
+  const totalAnnualized = propertyRows.reduce(
+    (sum, p) => sum + p.annualizedRent,
+    0
+  );
+
+  // WALT from snapshots
+  const rd = reportDate;
+  let weightedYears = 0;
+  let totalRentForWalt = 0;
+  for (const snap of snaps) {
+    if (snap.endDate && snap.monthlyRent) {
+      const rent = toNum(snap.monthlyRent);
+      const yearsLeft = Math.max(
+        0,
+        (snap.endDate.getTime() - rd.getTime()) /
+          (365.25 * 24 * 60 * 60 * 1000)
+      );
+      weightedYears += rent * yearsLeft;
+      totalRentForWalt += rent;
+    }
+  }
+  const walt = totalRentForWalt > 0 ? weightedYears / totalRentForWalt : 0;
+  const totalArea = propertyRows.reduce((sum, p) => sum + p.areaSqm, 0);
+
+  return {
+    companyCount: companyNames.size,
+    propertyRows,
+    totalAnnualized,
+    walt,
+    totalArea,
+  };
+}
+
+export default async function OversiktPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ period?: string }>;
+}) {
+  const accountId = await getAccountId();
   if (!accountId) {
     return (
       <div className="p-12 text-center">
@@ -120,8 +222,27 @@ export default async function OversiktPage() {
     );
   }
 
-  const { companies, propertyRows, totalAnnualized, walt, totalArea } =
-    await getData(accountId);
+  const { period } = await searchParams;
+
+  let data;
+  if (period) {
+    const snapData = await getSnapshotData(accountId, period);
+    data = getDataFromSnapshots(snapData);
+  } else {
+    data = await getDataFromLiveTables(accountId);
+  }
+
+  if (!data) {
+    return (
+      <div className="p-12 text-center">
+        <p className="text-sm text-gray-400">
+          Ingen data for valgt periode.
+        </p>
+      </div>
+    );
+  }
+
+  const { companyCount, propertyRows, totalAnnualized, walt, totalArea } = data;
 
   return (
     <div>
@@ -149,7 +270,7 @@ export default async function OversiktPage() {
         />
         <KpiCard
           label="Selskaper"
-          value={String(companies.length)}
+          value={String(companyCount)}
           icon={Building2}
           color="purple"
         />
