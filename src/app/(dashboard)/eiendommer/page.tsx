@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { getAccountId } from "@/lib/auth";
 import { formatNOK } from "@/lib/format";
 import { Building, Users, Banknote, Ruler } from "lucide-react";
+import Link from "next/link";
 
 function toNum(d: { toNumber(): number } | null | undefined): number {
   return d ? d.toNumber() : 0;
@@ -82,9 +83,10 @@ export default async function EiendommerPage() {
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
           {propertyCards.map((property) => (
-            <div
+            <Link
               key={property.id}
-              className="rounded-xl bg-white border border-gray-100 shadow-sm p-5 hover:shadow-md transition-shadow"
+              href={`/eiendommer/${property.id}`}
+              className="rounded-xl bg-white border border-gray-100 shadow-sm p-5 hover:shadow-md transition-shadow block"
             >
               <div className="mb-3">
                 <h3 className="text-sm font-semibold text-gray-900">
@@ -131,7 +133,7 @@ export default async function EiendommerPage() {
                   </div>
                 </div>
               </div>
-            </div>
+            </Link>
           ))}
         </div>
       )}
