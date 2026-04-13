@@ -39,9 +39,19 @@ export async function importRentRollToDb(
 ): Promise<DbImportResult> {
   // 1. Parse Excel
   const parsed = parseRentRollExcel(buffer);
-  const reportDate = parsed.reportDate
-    ? parseNorwegianDate(parsed.reportDate) ?? new Date()
-    : new Date();
+
+  // Report date MUST come from the file — never fabricate one
+  if (!parsed.reportDate) {
+    throw new Error(
+      "Kunne ikke lese rapportdato fra filen. Første linje må inneholde dato på formatet DD.MM.YYYY."
+    );
+  }
+  const reportDate = parseNorwegianDate(parsed.reportDate);
+  if (!reportDate) {
+    throw new Error(
+      `Ugyldig rapportdato "${parsed.reportDate}". Forventet format DD.MM.YYYY.`
+    );
+  }
 
   // 2. Find or create company by org number
   const orgNumber = parsed.orgNumber ?? "unknown";
@@ -57,7 +67,31 @@ export async function importRentRollToDb(
     },
   });
 
-  // 3. Create import record
+  // 3. Handle duplicates — a file for a given company+date is the truth for that date
+  //    Delete any existing import for the same company and report date
+  const existingImports = await prisma.rentRollImport.findMany({
+    where: {
+      companyId: company.id,
+      snapshots: { some: { reportDate } },
+    },
+    select: { id: true },
+  });
+
+  if (existingImports.length > 0) {
+    const importIds = existingImports.map((i) => i.id);
+    // Cascade: delete snapshots and events for these imports
+    await prisma.unitEvent.deleteMany({
+      where: { importId: { in: importIds } },
+    });
+    await prisma.rentRollSnapshot.deleteMany({
+      where: { importId: { in: importIds } },
+    });
+    await prisma.rentRollImport.deleteMany({
+      where: { id: { in: importIds } },
+    });
+  }
+
+  // 4. Create import record
   const importRecord = await prisma.rentRollImport.create({
     data: {
       accountId,
@@ -71,18 +105,17 @@ export async function importRentRollToDb(
   });
 
   try {
-    // 4. Get previous snapshots for diffing
+    // 5. Get previous chronological snapshots for diffing
+    //    Find the latest snapshot with reportDate BEFORE current, regardless of import order
     const previousSnapshots = await prisma.rentRollSnapshot.findMany({
       where: {
         companyId: company.id,
-        importId: {
-          not: importRecord.id, // exclude current
-        },
+        reportDate: { lt: reportDate },
       },
-      orderBy: { createdAt: "desc" },
+      orderBy: { reportDate: "desc" },
     });
 
-    // Build a map of latest previous snapshot per unitKey
+    // Build a map of latest previous snapshot per unitKey (closest earlier date)
     const prevSnapshotMap = new Map<string, typeof previousSnapshots[0]>();
     for (const snap of previousSnapshots) {
       if (!prevSnapshotMap.has(snap.unitKey)) {
@@ -90,7 +123,17 @@ export async function importRentRollToDb(
       }
     }
 
-    // 5. Process each row in a transaction
+    // 6. Determine if this is the latest report for the company
+    //    Only update current-state tables (Property/Unit/Contract) if so
+    const newerSnapshot = await prisma.rentRollSnapshot.findFirst({
+      where: {
+        companyId: company.id,
+        reportDate: { gt: reportDate },
+      },
+    });
+    const isLatestReport = !newerSnapshot;
+
+    // 7. Process each row in a transaction
     let snapshotCount = 0;
     let eventCount = 0;
 
@@ -98,169 +141,175 @@ export async function importRentRollToDb(
       for (const row of parsed.rows) {
         const unitKey = buildUnitKey(row);
 
-        // Upsert property
-        const property = await tx.property.upsert({
-          where: {
-            companyId_streetName_streetNumber_postalCode_gnr_bnr: {
+        // Update current-state tables only if this is the latest report
+        if (isLatestReport) {
+          // Upsert property
+          const property = await tx.property.upsert({
+            where: {
+              companyId_streetName_streetNumber_postalCode_gnr_bnr: {
+                companyId: company.id,
+                streetName: row.property.streetName,
+                streetNumber: row.property.streetNumber,
+                postalCode: row.property.postalCode,
+                gnr: row.property.gnr ?? 0,
+                bnr: row.property.bnr ?? 0,
+              },
+            },
+            update: {
+              postalPlace: row.property.postalPlace,
+              municipality: row.property.municipality,
+            },
+            create: {
               companyId: company.id,
               streetName: row.property.streetName,
               streetNumber: row.property.streetNumber,
               postalCode: row.property.postalCode,
+              postalPlace: row.property.postalPlace,
+              municipality: row.property.municipality,
               gnr: row.property.gnr ?? 0,
               bnr: row.property.bnr ?? 0,
+              snr: row.property.snr,
             },
-          },
-          update: {
-            postalPlace: row.property.postalPlace,
-            municipality: row.property.municipality,
-          },
-          create: {
-            companyId: company.id,
-            streetName: row.property.streetName,
-            streetNumber: row.property.streetNumber,
-            postalCode: row.property.postalCode,
-            postalPlace: row.property.postalPlace,
-            municipality: row.property.municipality,
-            gnr: row.property.gnr ?? 0,
-            bnr: row.property.bnr ?? 0,
-            snr: row.property.snr,
-          },
-        });
+          });
 
-        // Upsert unit
-        const unit = await tx.unit.upsert({
-          where: {
-            propertyId_unitNumber_customNumber: {
+          // Upsert unit
+          const unit = await tx.unit.upsert({
+            where: {
+              propertyId_unitNumber_customNumber: {
+                propertyId: property.id,
+                unitNumber: row.unit.unitNumber ?? "",
+                customNumber: row.unit.customNumber ?? "",
+              },
+            },
+            update: {
+              unitType: row.unit.unitType as never,
+              numRooms: row.unit.numRooms,
+              areaSqm: row.unit.areaSqm,
+              numBedrooms: row.unit.numBedrooms,
+              floor: row.unit.floor,
+            },
+            create: {
+              companyId: company.id,
               propertyId: property.id,
               unitNumber: row.unit.unitNumber ?? "",
               customNumber: row.unit.customNumber ?? "",
+              unitType: row.unit.unitType as never,
+              numRooms: row.unit.numRooms,
+              areaSqm: row.unit.areaSqm,
+              numBedrooms: row.unit.numBedrooms,
+              floor: row.unit.floor,
             },
-          },
-          update: {
-            unitType: row.unit.unitType as never,
-            numRooms: row.unit.numRooms,
-            areaSqm: row.unit.areaSqm,
-            numBedrooms: row.unit.numBedrooms,
-            floor: row.unit.floor,
-          },
-          create: {
-            companyId: company.id,
-            propertyId: property.id,
-            unitNumber: row.unit.unitNumber ?? "",
-            customNumber: row.unit.customNumber ?? "",
-            unitType: row.unit.unitType as never,
-            numRooms: row.unit.numRooms,
-            areaSqm: row.unit.areaSqm,
-            numBedrooms: row.unit.numBedrooms,
-            floor: row.unit.floor,
-          },
-        });
+          });
 
-        // Upsert leaseholder (if present)
-        let leaseholderId: string | null = null;
-        if (row.tenant?.name) {
-          const leaseholder = await tx.leaseholder.upsert({
-            where: {
-              companyId_name_email: {
+          // Upsert leaseholder (if present)
+          let leaseholderId: string | null = null;
+          if (row.tenant?.name) {
+            const leaseholder = await tx.leaseholder.upsert({
+              where: {
+                companyId_name_email: {
+                  companyId: company.id,
+                  name: row.tenant.name,
+                  email: row.tenant.email ?? "",
+                },
+              },
+              update: {
+                phone: row.tenant.phone,
+                invoiceEmail: row.tenant.invoiceEmail,
+              },
+              create: {
                 companyId: company.id,
                 name: row.tenant.name,
                 email: row.tenant.email ?? "",
+                phone: row.tenant.phone,
+                invoiceEmail: row.tenant.invoiceEmail,
               },
-            },
-            update: {
-              phone: row.tenant.phone,
-              invoiceEmail: row.tenant.invoiceEmail,
-            },
-            create: {
-              companyId: company.id,
-              name: row.tenant.name,
-              email: row.tenant.email ?? "",
-              phone: row.tenant.phone,
-              invoiceEmail: row.tenant.invoiceEmail,
-            },
-          });
-          leaseholderId = leaseholder.id;
-        }
+            });
+            leaseholderId = leaseholder.id;
+          }
 
-        // Upsert contract
-        const contractWhere = row.contract.externalContractId
-          ? {
-              companyId_externalContractId: {
+          // Upsert contract
+          const contractWhere = row.contract.externalContractId
+            ? {
+                companyId_externalContractId: {
+                  companyId: company.id,
+                  externalContractId: row.contract.externalContractId,
+                },
+              }
+            : undefined;
+
+          const contractData = {
+            unitId: unit.id,
+            leaseholderId,
+            status: row.contract.status as never,
+            contractType: row.contract.contractType as never,
+            startDate: row.contract.startDate,
+            endDate: row.contract.endDate,
+            terminationDate: row.contract.terminationDate,
+            noticePeriodMonths: row.contract.noticePeriodMonths,
+            earliestNoticeDate: row.contract.earliestNoticeDate,
+            monthlyRent: row.contract.monthlyRent,
+            fixedReduction: row.contract.fixedReduction,
+            lastRentAdjustmentDate: row.contract.lastRentAdjustmentDate,
+            nextRentAdjustmentDate: row.contract.nextRentAdjustmentDate,
+            rentBeforeLastAdjustment: row.contract.rentBeforeLastAdjustment,
+            cpiBase: row.contract.cpiBase,
+            akontoElectricity: row.contract.akontoElectricity,
+            akontoWaterSewage: row.contract.akontoWaterSewage,
+          };
+
+          if (contractWhere) {
+            await tx.contract.upsert({
+              where: contractWhere,
+              update: contractData,
+              create: {
                 companyId: company.id,
                 externalContractId: row.contract.externalContractId,
-              },
-            }
-          : undefined;
-
-        const contractData = {
-          unitId: unit.id,
-          leaseholderId,
-          status: row.contract.status as never,
-          contractType: row.contract.contractType as never,
-          startDate: row.contract.startDate,
-          endDate: row.contract.endDate,
-          terminationDate: row.contract.terminationDate,
-          noticePeriodMonths: row.contract.noticePeriodMonths,
-          earliestNoticeDate: row.contract.earliestNoticeDate,
-          monthlyRent: row.contract.monthlyRent,
-          fixedReduction: row.contract.fixedReduction,
-          lastRentAdjustmentDate: row.contract.lastRentAdjustmentDate,
-          nextRentAdjustmentDate: row.contract.nextRentAdjustmentDate,
-          rentBeforeLastAdjustment: row.contract.rentBeforeLastAdjustment,
-          cpiBase: row.contract.cpiBase,
-          akontoElectricity: row.contract.akontoElectricity,
-          akontoWaterSewage: row.contract.akontoWaterSewage,
-        };
-
-        let contract;
-        if (contractWhere) {
-          contract = await tx.contract.upsert({
-            where: contractWhere,
-            update: contractData,
-            create: {
-              companyId: company.id,
-              externalContractId: row.contract.externalContractId,
-              ...contractData,
-            },
-          });
-        } else {
-          // No external contract ID — find by unit or create
-          const existing = await tx.contract.findFirst({
-            where: { companyId: company.id, unitId: unit.id },
-          });
-          if (existing) {
-            contract = await tx.contract.update({
-              where: { id: existing.id },
-              data: contractData,
-            });
-          } else {
-            contract = await tx.contract.create({
-              data: {
-                companyId: company.id,
                 ...contractData,
               },
             });
+          } else {
+            const existing = await tx.contract.findFirst({
+              where: { companyId: company.id, unitId: unit.id },
+            });
+            if (existing) {
+              await tx.contract.update({
+                where: { id: existing.id },
+                data: contractData,
+              });
+            } else {
+              await tx.contract.create({
+                data: {
+                  companyId: company.id,
+                  ...contractData,
+                },
+              });
+            }
+          }
+
+          // Upsert security deposit
+          if (row.security?.securityType) {
+            const contract = await tx.contract.findFirst({
+              where: { companyId: company.id, unitId: unit.id },
+            });
+            if (contract) {
+              await tx.securityDeposit.upsert({
+                where: { contractId: contract.id },
+                update: {
+                  securityType: row.security.securityType as never,
+                  amount: row.security.amount,
+                },
+                create: {
+                  companyId: company.id,
+                  contractId: contract.id,
+                  securityType: row.security.securityType as never,
+                  amount: row.security.amount,
+                },
+              });
+            }
           }
         }
 
-        // Upsert security deposit
-        if (row.security?.securityType) {
-          await tx.securityDeposit.upsert({
-            where: { contractId: contract.id },
-            update: {
-              securityType: row.security.securityType as never,
-              amount: row.security.amount,
-            },
-            create: {
-              companyId: company.id,
-              contractId: contract.id,
-              securityType: row.security.securityType as never,
-              amount: row.security.amount,
-            },
-          });
-        }
-
-        // Create snapshot
+        // Always create snapshot (regardless of whether this is latest)
         await tx.rentRollSnapshot.create({
           data: {
             importId: importRecord.id,
