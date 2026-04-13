@@ -73,23 +73,42 @@ async function getLiveData(
   }, 0);
   const totalArea = allUnits.reduce((sum, u) => sum + toNum(u.areaSqm), 0);
 
-  const properties: PropertyRow[] = company.properties.map((p) => {
-    const pUnits = p.units.length;
-    const pVacant = p.units.filter((u) => {
+  // Group by address to merge duplicate Property records
+  const propGroupMap = new Map<string, {
+    address: string;
+    postalCode: string;
+    postalPlace: string;
+    gnr: number | null;
+    bnr: number | null;
+    unitCount: number;
+    vacantCount: number;
+  }>();
+
+  for (const p of company.properties) {
+    const addr = `${p.streetName} ${p.streetNumber}`;
+    if (!propGroupMap.has(addr)) {
+      propGroupMap.set(addr, {
+        address: addr,
+        postalCode: p.postalCode,
+        postalPlace: p.postalPlace,
+        gnr: p.gnr,
+        bnr: p.bnr,
+        unitCount: 0,
+        vacantCount: 0,
+      });
+    }
+    const group = propGroupMap.get(addr)!;
+    group.unitCount += p.units.length;
+    group.vacantCount += p.units.filter((u) => {
       const c = u.contracts[0];
       return !c || c.status === "ledig";
     }).length;
-    return {
-      id: p.id,
-      address: `${p.streetName} ${p.streetNumber}`,
-      postalCode: p.postalCode,
-      postalPlace: p.postalPlace,
-      gnr: p.gnr,
-      bnr: p.bnr,
-      unitCount: pUnits,
-      vacantCount: pVacant,
-    };
-  });
+  }
+
+  const properties: PropertyRow[] = [...propGroupMap.entries()].map(([addr, g]) => ({
+    id: addr,
+    ...g,
+  }));
 
   const tenants: TenantRow[] = company.properties.flatMap((property) =>
     property.units
@@ -115,11 +134,8 @@ async function getLiveData(
 
   tenants.sort((a, b) => a.name.localeCompare(b.name, "nb"));
 
-  const mapMarkers = company.properties
-    .map(
-      (p) =>
-        `${p.streetName} ${p.streetNumber}, ${p.postalCode} ${p.postalPlace}, Norway`
-    )
+  const mapMarkers = [...propGroupMap.values()]
+    .map((g) => `${g.address}, ${g.postalCode} ${g.postalPlace}, Norway`)
     .join("|");
 
   return {

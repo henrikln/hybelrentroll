@@ -53,11 +53,16 @@ async function getLiveData(accountId: string): Promise<CompanyCard[]> {
     }, 0);
     const totalArea = allUnits.reduce((sum, u) => sum + toNum(u.areaSqm), 0);
 
+    // Count unique addresses (not DB records — duplicates can exist)
+    const uniqueAddresses = new Set(
+      company.properties.map((p) => `${p.streetName} ${p.streetNumber}`)
+    );
+
     return {
       id: company.id,
       name: company.name,
       orgNumber: company.orgNumber,
-      propertyCount: company.properties.length,
+      propertyCount: uniqueAddresses.size,
       totalUnits,
       vacantUnits,
       annualRent,
