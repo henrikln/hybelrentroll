@@ -59,7 +59,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         const isSuperAdmin = SUPER_ADMINS.includes(email);
         const dbUser = await prisma.user.upsert({
           where: { email },
-          update: { name: user.name ?? undefined },
+          update: { name: user.name ?? undefined, lastLoginAt: new Date() },
           create: {
             accountId,
             email,

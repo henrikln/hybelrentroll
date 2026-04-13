@@ -166,6 +166,7 @@ export default async function AdminUsersPage() {
                         <th className="pb-2 font-medium">Navn</th>
                         <th className="pb-2 font-medium">Rolle</th>
                         <th className="pb-2 font-medium">Status</th>
+                        <th className="pb-2 font-medium">Sist pålogget</th>
                         <th className="pb-2 font-medium">Registrert</th>
                         <th className="pb-2 w-32" />
                       </tr>
@@ -203,6 +204,17 @@ export default async function AdminUsersPage() {
                             >
                               {user.active ? "Aktiv" : "Deaktivert"}
                             </span>
+                          </td>
+                          <td className="py-2.5 text-gray-400">
+                            {user.lastLoginAt
+                              ? user.lastLoginAt.toLocaleString("nb-NO", {
+                                  day: "2-digit",
+                                  month: "2-digit",
+                                  year: "2-digit",
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })
+                              : "—"}
                           </td>
                           <td className="py-2.5 text-gray-400">
                             {user.createdAt.toLocaleDateString("nb-NO")}
