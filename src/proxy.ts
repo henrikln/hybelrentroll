@@ -12,7 +12,9 @@ export function proxy(request: NextRequest) {
       pathname.startsWith("/sign-in") ||
       pathname.startsWith("/api/auth") ||
       pathname.startsWith("/api/webhooks") ||
-      pathname.startsWith("/api/internal")
+      pathname.startsWith("/api/internal") ||
+      pathname.startsWith("/api/streetview") ||
+      pathname.startsWith("/api/staticmap")
     ) {
       return NextResponse.next();
     }
