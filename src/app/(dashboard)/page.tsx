@@ -229,22 +229,77 @@ export default async function OversiktPage({
   let data;
   let debugInfo = "";
   if (period) {
+    const reportDate = new Date(period);
+
+    // Raw count BEFORE dedup — to see if snapshots exist but are being filtered
+    const rawSnapshots = await prisma.rentRollSnapshot.findMany({
+      where: { company: { accountId }, reportDate },
+      select: { companyId: true, unitKey: true, createdAt: true, streetName: true, streetNumber: true },
+      orderBy: [{ companyId: "asc" }, { unitKey: "asc" }, { createdAt: "desc" }],
+    });
+
+    // Recent imports for this account
+    const recentImports = await prisma.rentRollImport.findMany({
+      where: { accountId },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+      select: {
+        id: true,
+        filename: true,
+        status: true,
+        rowsTotal: true,
+        rowsImported: true,
+        createdAt: true,
+        company: { select: { name: true } },
+      },
+    });
+
     const snapData = await getSnapshotData(accountId, period);
     if (snapData) {
-      debugInfo = `source=snapshot period=${period} reportDate=${snapData.reportDate.toISOString()} snapshotCount=${snapData.snapshots.length}\n`;
-      // Group by company for debug
-      const byCompany = new Map<string, { count: number; name: string }>();
+      debugInfo = `source=snapshot period=${period} reportDate=${snapData.reportDate.toISOString()}\n`;
+      debugInfo += `rawSnapshotCount=${rawSnapshots.length} dedupedCount=${snapData.snapshots.length}\n\n`;
+
+      // Group raw snapshots by company
+      const rawByCompany = new Map<string, { unitKeys: string[]; addresses: Set<string> }>();
+      for (const s of rawSnapshots) {
+        if (!rawByCompany.has(s.companyId)) {
+          rawByCompany.set(s.companyId, { unitKeys: [], addresses: new Set() });
+        }
+        const entry = rawByCompany.get(s.companyId)!;
+        entry.unitKeys.push(s.unitKey);
+        entry.addresses.add(`${s.streetName} ${s.streetNumber}`);
+      }
+
+      // Group deduped by company
+      const dedupByCompany = new Map<string, { count: number; name: string; addresses: Set<string> }>();
       for (const s of snapData.snapshots) {
-        const key = s.companyId;
-        const existing = byCompany.get(key);
-        if (existing) {
-          existing.count++;
-        } else {
-          byCompany.set(key, { count: 1, name: s.company.name });
+        if (!dedupByCompany.has(s.companyId)) {
+          dedupByCompany.set(s.companyId, { count: 0, name: s.company.name, addresses: new Set() });
+        }
+        const entry = dedupByCompany.get(s.companyId)!;
+        entry.count++;
+        entry.addresses.add(`${s.streetName} ${s.streetNumber}`);
+      }
+
+      debugInfo += `--- per company (deduped / raw) ---\n`;
+      for (const [id, dedup] of dedupByCompany) {
+        const raw = rawByCompany.get(id);
+        debugInfo += `  ${dedup.name} (${id.slice(0, 8)}): ${dedup.count} deduped / ${raw?.unitKeys.length ?? 0} raw\n`;
+        debugInfo += `    addresses: ${[...dedup.addresses].join(", ")}\n`;
+        if (raw && raw.addresses.size > dedup.addresses.size) {
+          debugInfo += `    raw addresses: ${[...raw.addresses].join(", ")}\n`;
         }
       }
-      for (const [id, { count, name }] of byCompany) {
-        debugInfo += `  company=${name} (${id.slice(0, 8)}) snapshots=${count}\n`;
+      // Show companies that exist in raw but not in deduped
+      for (const [id, raw] of rawByCompany) {
+        if (!dedupByCompany.has(id)) {
+          debugInfo += `  [MISSING] companyId=${id.slice(0, 8)}: ${raw.unitKeys.length} raw snapshots, addresses: ${[...raw.addresses].join(", ")}\n`;
+        }
+      }
+
+      debugInfo += `\n--- recent imports (last 20) ---\n`;
+      for (const imp of recentImports) {
+        debugInfo += `  ${imp.createdAt.toISOString().slice(0, 19)} | ${imp.status} | ${imp.company?.name ?? "?"} | ${imp.filename} | rows=${imp.rowsTotal}→${imp.rowsImported}\n`;
       }
     }
     data = getDataFromSnapshots(snapData);
