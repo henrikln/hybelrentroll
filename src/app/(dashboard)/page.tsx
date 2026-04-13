@@ -227,10 +227,29 @@ export default async function OversiktPage({
   const { period } = await searchParams;
 
   let data;
+  let debugInfo = "";
   if (period) {
     const snapData = await getSnapshotData(accountId, period);
+    if (snapData) {
+      debugInfo = `source=snapshot period=${period} reportDate=${snapData.reportDate.toISOString()} snapshotCount=${snapData.snapshots.length}\n`;
+      // Group by company for debug
+      const byCompany = new Map<string, { count: number; name: string }>();
+      for (const s of snapData.snapshots) {
+        const key = s.companyId;
+        const existing = byCompany.get(key);
+        if (existing) {
+          existing.count++;
+        } else {
+          byCompany.set(key, { count: 1, name: s.company.name });
+        }
+      }
+      for (const [id, { count, name }] of byCompany) {
+        debugInfo += `  company=${name} (${id.slice(0, 8)}) snapshots=${count}\n`;
+      }
+    }
     data = getDataFromSnapshots(snapData);
   } else {
+    debugInfo = "source=liveTables\n";
     data = await getDataFromLiveTables(accountId);
   }
 
@@ -280,6 +299,19 @@ export default async function OversiktPage({
 
       {/* Property list */}
       <PropertyList properties={propertyRows} />
+
+      {/* Debug info — hidden, copy from DOM inspector */}
+      <details className="mt-8 rounded-lg border border-gray-100 bg-gray-50 p-4 text-xs">
+        <summary className="cursor-pointer text-gray-400">Debug info</summary>
+        <pre className="mt-2 whitespace-pre-wrap text-gray-500">
+          {debugInfo}
+          {`\nproperties (${propertyRows.length}):\n`}
+          {propertyRows.map((p) =>
+            `  ${p.name} | ${p.companyName} | units=${p.totalUnits} vacant=${p.vacantUnits} rent=${p.annualizedRent} area=${p.areaSqm}\n`
+          ).join("")}
+          {`\ntotals: rent=${totalAnnualized} area=${totalArea} walt=${walt.toFixed(2)} companies=${companyCount}`}
+        </pre>
+      </details>
     </div>
   );
 }
