@@ -13,15 +13,24 @@ export function CompanyMoveSelect({
   moveAction: (formData: FormData) => Promise<void>;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
+  const selectRef = useRef<HTMLSelectElement>(null);
 
   return (
-    <form ref={formRef} action={moveAction} className="inline">
+    <form ref={formRef} action={moveAction} className="inline relative">
       <input type="hidden" name="companyId" value={companyId} />
+      <button
+        type="button"
+        onClick={() => selectRef.current?.showPopover?.() || selectRef.current?.click()}
+        className="text-purple-400 hover:text-purple-700"
+        title="Flytt til annen konto"
+      >
+        <ArrowRightLeft className="h-3 w-3" />
+      </button>
       <select
+        ref={selectRef}
         name="targetAccountId"
         onChange={() => formRef.current?.requestSubmit()}
-        className="sr-only"
-        id={`move-${companyId}`}
+        className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
         defaultValue=""
       >
         <option value="" disabled>
@@ -33,13 +42,6 @@ export function CompanyMoveSelect({
           </option>
         ))}
       </select>
-      <label
-        htmlFor={`move-${companyId}`}
-        className="cursor-pointer text-purple-400 hover:text-purple-700"
-        title="Flytt til annen konto"
-      >
-        <ArrowRightLeft className="h-3 w-3" />
-      </label>
     </form>
   );
 }
