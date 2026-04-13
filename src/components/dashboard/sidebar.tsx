@@ -36,7 +36,6 @@ const navigation: NavSection[] = [
   {
     title: "Innsikt",
     items: [
-      { label: "Rent roll", href: "/rent-roll", icon: Table2 },
       { label: "Ledighet", href: "/ledighet", icon: KeyRound },
       { label: "Utløpsprofil", href: "/utlopsprofil", icon: BarChart3 },
     ],
