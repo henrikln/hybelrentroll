@@ -78,32 +78,14 @@ export async function importRentRollToDb(
     },
   });
 
-  // 3. Handle duplicates — a file for a given company+date is the truth for that date
-  //    Delete existing imports for the same company and report date.
-  //    BUT: exclude imports from the same email batch (same emailId) — multiple files
-  //    for the same company can arrive in one email and should coexist.
-  const existingImports = await prisma.rentRollImport.findMany({
-    where: {
-      companyId: company.id,
-      snapshots: { some: { reportDate } },
-      ...(opts.emailId ? { NOT: { emailId: opts.emailId } } : {}),
-    },
-    select: { id: true },
-  });
-
-  if (existingImports.length > 0) {
-    const importIds = existingImports.map((i) => i.id);
-    // Cascade: delete snapshots and events for these imports
-    await prisma.unitEvent.deleteMany({
-      where: { importId: { in: importIds } },
-    });
-    await prisma.rentRollSnapshot.deleteMany({
-      where: { importId: { in: importIds } },
-    });
-    await prisma.rentRollImport.deleteMany({
-      where: { id: { in: importIds } },
-    });
-  }
+  // 3. Imports are additive — multiple files can contribute snapshots for the
+  //    same company+reportDate (e.g. split by property). The dedup layer in
+  //    period.ts handles overlapping unitKeys by keeping the latest createdAt.
+  //    We do NOT delete old imports here. This avoids:
+  //    - Sibling files in the same email deleting each other
+  //    - Files from different emails for the same company deleting each other
+  //    - Race conditions when multiple emails arrive simultaneously
+  //    Old snapshots are harmless — the read layer deduplicates by unitKey.
 
   // 4. Create import record
   const importRecord = await prisma.rentRollImport.create({
