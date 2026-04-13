@@ -42,19 +42,27 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 
         let accountId: string;
 
-        if (!existing) {
-          // New user — create a new account (tenant)
-          const account = await prisma.account.create({
-            data: {
-              name: user.name ?? email,
-              allowedSenders: {
-                create: { email, note: "Opprettet ved første innlogging" },
-              },
-            },
-          });
-          accountId = account.id;
-        } else {
+        if (existing) {
           accountId = existing.accountId;
+        } else {
+          // Check if user was added via admin panel (has a User record already)
+          const existingUser = await prisma.user.findUnique({
+            where: { email },
+          });
+          if (existingUser) {
+            accountId = existingUser.accountId;
+          } else {
+            // Truly new user — create a new account (tenant)
+            const account = await prisma.account.create({
+              data: {
+                name: user.name ?? email,
+                allowedSenders: {
+                  create: { email, note: "Opprettet ved første innlogging" },
+                },
+              },
+            });
+            accountId = account.id;
+          }
         }
 
         // Ensure User record exists
@@ -94,16 +102,21 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       // If accountId or isGlobalAdmin not in token yet (e.g. existing session), look it up
       if (token.email && (!token.accountId || token.isGlobalAdmin === undefined)) {
         const email = (token.email as string).toLowerCase();
-        const sender = await prisma.allowedSender.findUnique({
-          where: { email },
-        });
-        if (sender && !token.accountId) {
-          token.accountId = sender.accountId;
-        }
+        // Try User table first (covers users added via admin panel)
         const dbUser = await prisma.user.findUnique({ where: { email } });
         if (dbUser) {
+          if (!token.accountId) token.accountId = dbUser.accountId;
           token.isAdmin = dbUser.role === "admin";
           token.isGlobalAdmin = dbUser.globalAdmin;
+        }
+        // Fall back to allowedSender if no User record
+        if (!token.accountId) {
+          const sender = await prisma.allowedSender.findUnique({
+            where: { email },
+          });
+          if (sender) {
+            token.accountId = sender.accountId;
+          }
         }
       }
       return token;
