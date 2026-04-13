@@ -202,6 +202,88 @@ describe("parseRentRollExcel", () => {
     expect(result.rows[0].contract.status).toBe("ledig");
   });
 
+  it("carries forward property fields from merged/grouped cells", () => {
+    const buffer = buildExcelBuffer({
+      dataRows: [
+        buildDataRow({
+          Gatenavn: "Brugata",
+          Gatenummer: "28",
+          Postnummer: "5003",
+          Poststed: "Bergen",
+          Bolignummer: "H0101",
+          "Eget nummer": "1",
+        }),
+        // Second row: property fields empty (merged cell in Excel)
+        buildDataRow({
+          Gatenavn: null,
+          Gatenummer: null,
+          Postnummer: null,
+          Poststed: null,
+          Bolignummer: "H0102",
+          "Eget nummer": "2",
+        }),
+        // Third row: also empty property fields
+        buildDataRow({
+          Gatenavn: null,
+          Gatenummer: null,
+          Postnummer: null,
+          Poststed: null,
+          Bolignummer: "H0103",
+          "Eget nummer": "3",
+        }),
+      ],
+    });
+    const result = parseRentRollExcel(buffer);
+    expect(result.rows).toHaveLength(3);
+    // All rows should have the property fields from the first row
+    expect(result.rows[0].property.streetName).toBe("Brugata");
+    expect(result.rows[1].property.streetName).toBe("Brugata");
+    expect(result.rows[2].property.streetName).toBe("Brugata");
+    expect(result.rows[1].property.streetNumber).toBe("28");
+    expect(result.rows[2].property.postalCode).toBe("5003");
+    // But unit fields should be per-row
+    expect(result.rows[0].unit.unitNumber).toBe("H0101");
+    expect(result.rows[1].unit.unitNumber).toBe("H0102");
+    expect(result.rows[2].unit.unitNumber).toBe("H0103");
+  });
+
+  it("resets carry-forward when new property group starts", () => {
+    const buffer = buildExcelBuffer({
+      dataRows: [
+        buildDataRow({
+          Gatenavn: "Brugata",
+          Gatenummer: "28",
+          Bolignummer: "H0101",
+        }),
+        // Merged row for same property
+        buildDataRow({
+          Gatenavn: null,
+          Gatenummer: null,
+          Bolignummer: "H0102",
+        }),
+        // New property starts
+        buildDataRow({
+          Gatenavn: "Åstveitveien",
+          Gatenummer: "35",
+          Bolignummer: "H0201",
+        }),
+        // Merged row for new property
+        buildDataRow({
+          Gatenavn: null,
+          Gatenummer: null,
+          Bolignummer: "H0202",
+        }),
+      ],
+    });
+    const result = parseRentRollExcel(buffer);
+    expect(result.rows).toHaveLength(4);
+    expect(result.rows[0].property.streetName).toBe("Brugata");
+    expect(result.rows[1].property.streetName).toBe("Brugata");
+    expect(result.rows[2].property.streetName).toBe("Åstveitveien");
+    expect(result.rows[3].property.streetName).toBe("Åstveitveien");
+    expect(result.rows[3].property.streetNumber).toBe("35");
+  });
+
   it("handles row with all optional fields null", () => {
     const buffer = buildExcelBuffer({
       dataRows: [

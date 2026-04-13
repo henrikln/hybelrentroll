@@ -57,10 +57,25 @@ export function parseRentRollExcel(buffer: Buffer | ArrayBuffer): ParseResult {
   );
   const headerMap = buildHeaderMap(headerRow);
 
+  // Fields that are typically merged/grouped per property in Excel exports.
+  // When these are empty on a row, we carry forward the previous row's values.
+  const CARRY_FORWARD_FIELDS = new Set([
+    "landlordName",
+    "streetName",
+    "streetNumber",
+    "postalCode",
+    "postalPlace",
+    "municipality",
+    "gnr",
+    "bnr",
+    "snr",
+  ]);
+
   // Parse data rows
   const rows: ParsedRow[] = [];
   const errors: ParseError[] = [];
   const dataRows = rawData.slice(DATA_START_ROW);
+  const prevValues: Record<string, unknown> = {};
 
   for (let i = 0; i < dataRows.length; i++) {
     const excelRow = dataRows[i];
@@ -75,6 +90,19 @@ export function parseRentRollExcel(buffer: Buffer | ArrayBuffer): ParseResult {
       const colIndex = headerMap.get(mapping.excelHeader);
       if (colIndex !== undefined) {
         raw[mapping.field] = excelRow[colIndex];
+      }
+    }
+
+    // Carry forward property-level fields from previous row when empty
+    // (handles merged cells and grouped rows in Excel exports)
+    for (const field of CARRY_FORWARD_FIELDS) {
+      const val = raw[field];
+      if (val === null || val === undefined || val === "") {
+        if (prevValues[field] !== undefined) {
+          raw[field] = prevValues[field];
+        }
+      } else {
+        prevValues[field] = val;
       }
     }
 
