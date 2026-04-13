@@ -67,9 +67,21 @@ describe("parseOrgFromTitle", () => {
     expect(result.orgNumber).toBeNull();
   });
 
-  it("returns null orgNumber for non-9-digit number", () => {
+  it("returns null orgNumber for non-9-digit number without date format", () => {
     const result = parseOrgFromTitle("COMPANY (12345)");
     expect(result.orgNumber).toBeNull();
+  });
+
+  it("parses private landlord with birth date as pseudo org number", () => {
+    const result = parseOrgFromTitle("Erik Brustad (03.05.1982), 30.04.2026");
+    expect(result.name).toBe("Erik Brustad");
+    expect(result.orgNumber).toBe("03051982");
+  });
+
+  it("parses private landlord birth date without dots", () => {
+    const result = parseOrgFromTitle("Ola Nordmann (15.12.1970), 31.03.2026");
+    expect(result.name).toBe("Ola Nordmann");
+    expect(result.orgNumber).toBe("15121970");
   });
 
   it("handles empty string", () => {

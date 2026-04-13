@@ -48,8 +48,10 @@ export function parseRentRollExcel(buffer: Buffer | ArrayBuffer): ParseResult {
   const { name: orgName, orgNumber } = parseOrgFromTitle(titleCell);
 
   // Extract report date from title: "..., DD.MM.YYYY"
-  const dateMatch = titleCell.match(/(\d{2}\.\d{2}\.\d{4})/);
-  const reportDate = dateMatch ? dateMatch[1] : null;
+  // Use the LAST date in the string — the first may be a birth date in the
+  // landlord's name, e.g. "Erik Brustad (03.05.1982), 30.04.2026"
+  const dateMatches = titleCell.match(/\d{2}\.\d{2}\.\d{4}/g);
+  const reportDate = dateMatches ? dateMatches[dateMatches.length - 1] : null;
 
   // Build header map from row 4
   const headerRow = (rawData[HEADER_ROW_INDEX] ?? []).map((v) =>

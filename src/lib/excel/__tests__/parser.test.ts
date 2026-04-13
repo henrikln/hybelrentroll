@@ -126,6 +126,17 @@ describe("parseRentRollExcel", () => {
     expect(result.reportDate).toBeNull();
   });
 
+  it("uses last date in title (skips birth date for private landlords)", () => {
+    const buffer = buildExcelBuffer({
+      title: "Erik Brustad (03.05.1982), 30.04.2026",
+      dataRows: [buildDataRow()],
+    });
+    const result = parseRentRollExcel(buffer);
+    expect(result.reportDate).toBe("30.04.2026");
+    expect(result.orgName).toBe("Erik Brustad");
+    expect(result.orgNumber).toBe("03051982");
+  });
+
   it("parses valid data rows", () => {
     const buffer = buildExcelBuffer({ dataRows: [buildDataRow()] });
     const result = parseRentRollExcel(buffer);

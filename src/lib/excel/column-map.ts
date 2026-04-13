@@ -89,9 +89,17 @@ export function buildHeaderMap(headerRow: (string | undefined)[]): Map<string, n
  * Example: "NAGELGÅRDEN AS (931734385), 30.04.2026"
  */
 export function parseOrgFromTitle(title: string): { name: string; orgNumber: string | null } {
-  const match = title.match(/^(.+?)\s*\((\d{9})\)/);
-  if (match) {
-    return { name: match[1].trim(), orgNumber: match[2] };
+  // Try org number first: "COMPANY AS (123456789), DD.MM.YYYY"
+  const orgMatch = title.match(/^(.+?)\s*\((\d{9})\)/);
+  if (orgMatch) {
+    return { name: orgMatch[1].trim(), orgNumber: orgMatch[2] };
+  }
+  // Fall back to birth date as identifier: "Person Name (DD.MM.YYYY), DD.MM.YYYY"
+  // Private landlords use birth date instead of org number
+  const birthMatch = title.match(/^(.+?)\s*\((\d{2}\.\d{2}\.\d{4})\)/);
+  if (birthMatch) {
+    // Use birth date without dots as a pseudo org number
+    return { name: birthMatch[1].trim(), orgNumber: birthMatch[2].replace(/\./g, "") };
   }
   return { name: title.trim(), orgNumber: null };
 }
