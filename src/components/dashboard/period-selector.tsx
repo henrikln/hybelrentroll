@@ -30,7 +30,15 @@ export function PeriodSelector({ periods }: { periods: string[] }) {
         onChange={(e) => handleChange(e.target.value)}
         className="h-8 rounded-md border border-gray-200 bg-white px-2 pr-7 text-xs text-gray-700 outline-none focus:border-purple-400 focus:ring-1 focus:ring-purple-400"
       >
-        <option value="latest">Siste rapport</option>
+        <option value="latest">
+          Siste rapport
+          {periods.length > 0 &&
+            ` (${new Date(periods[0]).toLocaleDateString("nb-NO", {
+              day: "2-digit",
+              month: "long",
+              year: "numeric",
+            })})`}
+        </option>
         {periods.map((p) => (
           <option key={p} value={p}>
             {new Date(p).toLocaleDateString("nb-NO", {
