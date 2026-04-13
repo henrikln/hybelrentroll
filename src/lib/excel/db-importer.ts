@@ -258,6 +258,17 @@ export async function importRentRollToDb(
           };
 
           if (contractWhere) {
+            // Clean up any existing contract for this unit that lacks an
+            // externalContractId — prevents duplicates when a contract
+            // gains an external ID between imports
+            await tx.contract.deleteMany({
+              where: {
+                companyId: company.id,
+                unitId: unit.id,
+                externalContractId: null,
+              },
+            });
+
             await tx.contract.upsert({
               where: contractWhere,
               update: contractData,
@@ -268,12 +279,22 @@ export async function importRentRollToDb(
               },
             });
           } else {
-            const existing = await tx.contract.findFirst({
+            // No externalContractId — find or create by unit
+            // Also clean up any duplicate contracts for this unit
+            const existing = await tx.contract.findMany({
               where: { companyId: company.id, unitId: unit.id },
             });
-            if (existing) {
+            if (existing.length > 0) {
+              // Keep the first, delete any extras
+              if (existing.length > 1) {
+                await tx.contract.deleteMany({
+                  where: {
+                    id: { in: existing.slice(1).map((c) => c.id) },
+                  },
+                });
+              }
               await tx.contract.update({
-                where: { id: existing.id },
+                where: { id: existing[0].id },
                 data: contractData,
               });
             } else {

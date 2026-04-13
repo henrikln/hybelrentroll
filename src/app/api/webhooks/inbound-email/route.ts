@@ -218,27 +218,51 @@ async function fetchReceivedAttachments(
 }
 
 async function sendSuccessEmail(to: string, results: DbImportResult[]) {
-  const totalProperties = results.reduce((s, r) => s + r.properties.length, 0);
-  const totalUnits = results.reduce((s, r) => s + r.parsedRows, 0);
+  // Deduplicate totals across files for the same company
+  const allProperties = new Set<string>();
+  const allUnits = new Set<string>();
+  for (const r of results) {
+    for (const p of r.properties) allProperties.add(p);
+    // Use orgName + parsedRows as a rough unique unit count per company
+    allUnits.add(`${r.orgNumber ?? r.orgName}`);
+  }
+  // Group results by company for cleaner summary
+  const byCompany = new Map<string, DbImportResult[]>();
+  for (const r of results) {
+    const key = r.orgNumber ?? r.orgName;
+    if (!byCompany.has(key)) byCompany.set(key, []);
+    byCompany.get(key)!.push(r);
+  }
 
-  const details = results
-    .map((r) => {
-      const annualized = r.parsedRows > 0 ? `${r.parsedRows} enheter` : "0 enheter";
+  const details = [...byCompany.values()]
+    .map((companyResults) => {
+      const r = companyResults[0];
+      const dates = companyResults
+        .map((cr) => cr.reportDate ?? "ukjent dato")
+        .sort()
+        .join(", ");
       return (
         `${r.orgName}\n` +
+        `  Rapportdatoer: ${dates}\n` +
         `  Eiendommer: ${r.properties.length} (${r.properties.join(", ")})\n` +
-        `  Enheter: ${annualized}\n` +
-        `  Hendelser: ${r.eventCount}`
+        `  Enheter: ${r.parsedRows}\n` +
+        `  Hendelser: ${companyResults.reduce((s, cr) => s + cr.eventCount, 0)}`
       );
     })
     .join("\n\n");
+
+  // Use first result per company for unique unit count
+  const uniqueUnits = [...byCompany.values()].reduce(
+    (s, cr) => s + cr[0].parsedRows,
+    0
+  );
 
   await resendEmail(to, "Import fullført", [
     `Hei!`,
     ``,
     `Din rent roll er importert.`,
     ``,
-    `Totalt: ${totalProperties} eiendommer, ${totalUnits} enheter`,
+    `Totalt: ${allProperties.size} eiendommer, ${uniqueUnits} enheter, ${results.length} filer`,
     ``,
     details,
     ``,
