@@ -91,13 +91,13 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         token.isAdmin = user.isAdmin;
         token.isGlobalAdmin = user.isGlobalAdmin;
       }
-      // If accountId not in token yet (e.g. existing session), look it up
-      if (!token.accountId && token.email) {
+      // If accountId or isGlobalAdmin not in token yet (e.g. existing session), look it up
+      if (token.email && (!token.accountId || token.isGlobalAdmin === undefined)) {
         const email = (token.email as string).toLowerCase();
         const sender = await prisma.allowedSender.findUnique({
           where: { email },
         });
-        if (sender) {
+        if (sender && !token.accountId) {
           token.accountId = sender.accountId;
         }
         const dbUser = await prisma.user.findUnique({ where: { email } });
