@@ -24,7 +24,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Missing sender" }, { status: 400 });
     }
 
-    // Idempotency: skip if we already processed this email
+    // Idempotency: skip if we already processed this email.
+    // Check both emailId (new imports) and recent imports from same sender (catches old imports without emailId).
     if (emailId) {
       const alreadyImported = await prisma.rentRollImport.findFirst({
         where: { emailId },
@@ -34,6 +35,21 @@ export async function POST(req: NextRequest) {
         console.log(`[inbound-email] Already processed email_id=${emailId}, skipping`);
         return NextResponse.json({ status: "already_processed", emailId });
       }
+    }
+
+    // Also check if we recently processed imports from this sender (within 5 min)
+    // This catches Resend retries for old emails that don't have emailId stored
+    const recentCutoff = new Date(Date.now() - 5 * 60 * 1000);
+    const recentImport = await prisma.rentRollImport.findFirst({
+      where: {
+        senderEmail,
+        createdAt: { gt: recentCutoff },
+      },
+      select: { id: true },
+    });
+    if (recentImport) {
+      console.log(`[inbound-email] Recent import from ${senderEmail} within 5min, skipping retry`);
+      return NextResponse.json({ status: "skipped_recent", senderEmail });
     }
 
     // 1. Look up sender → account
