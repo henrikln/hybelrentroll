@@ -1,6 +1,6 @@
 export const dynamic = "force-dynamic";
 
-import { Banknote, CalendarClock, Building2 } from "lucide-react";
+import { Banknote, CalendarClock, Building2, Ruler } from "lucide-react";
 import { KpiCard } from "@/components/dashboard/kpi-card";
 import { PropertyList } from "@/components/dashboard/property-list";
 import { formatNOK, formatDecimal } from "@/lib/format";
@@ -102,7 +102,9 @@ async function getData(accountId: string) {
   }
   const walt = totalRentForWalt > 0 ? weightedYears / totalRentForWalt : 0;
 
-  return { companies, propertyRows, totalAnnualized, walt };
+  const totalArea = propertyRows.reduce((sum, p) => sum + p.areaSqm, 0);
+
+  return { companies, propertyRows, totalAnnualized, walt, totalArea };
 }
 
 export default async function OversiktPage() {
@@ -118,7 +120,7 @@ export default async function OversiktPage() {
     );
   }
 
-  const { companies, propertyRows, totalAnnualized, walt } =
+  const { companies, propertyRows, totalAnnualized, walt, totalArea } =
     await getData(accountId);
 
   return (
@@ -126,18 +128,24 @@ export default async function OversiktPage() {
       <h1 className="mb-6 text-xl font-semibold text-gray-900">Oversikt</h1>
 
       {/* KPI Cards */}
-      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <KpiCard
           label="Annualisert leie"
-          value={formatNOK(totalAnnualized)}
+          value={`kr ${formatNOK(totalAnnualized)}`}
           icon={Banknote}
           color="green"
+        />
+        <KpiCard
+          label="Totalt areal"
+          value={`${formatNOK(totalArea)} m²`}
+          icon={Ruler}
+          color="blue"
         />
         <KpiCard
           label="WALT"
           value={formatDecimal(walt, 1) + " år"}
           icon={CalendarClock}
-          color="blue"
+          color="purple"
         />
         <KpiCard
           label="Selskaper"

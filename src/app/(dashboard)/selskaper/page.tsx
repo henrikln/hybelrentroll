@@ -2,8 +2,9 @@ export const dynamic = "force-dynamic";
 
 import { prisma } from "@/lib/db";
 import { getAccountId } from "@/lib/auth";
-import { formatNOK } from "@/lib/format";
-import { Building2, Home, Users, Banknote, Ruler } from "lucide-react";
+import { formatNOK, formatDecimal } from "@/lib/format";
+import { Building2, Home, Users, Banknote, Ruler, CalendarClock } from "lucide-react";
+import { KpiCard } from "@/components/dashboard/kpi-card";
 import Link from "next/link";
 
 function toNum(d: { toNumber(): number } | null | undefined): number {
@@ -63,9 +64,43 @@ export default async function SelskaperPage() {
     };
   });
 
+  const totalAnnualRent = companyCards.reduce((s, c) => s + c.annualRent, 0);
+  const totalAreaAll = companyCards.reduce((s, c) => s + c.totalArea, 0);
+  const totalUnitsAll = companyCards.reduce((s, c) => s + c.totalUnits, 0);
+  const totalVacantAll = companyCards.reduce((s, c) => s + c.vacantUnits, 0);
+
   return (
     <div>
       <h1 className="mb-6 text-xl font-semibold text-gray-900">Selskaper</h1>
+
+      {companyCards.length > 0 && (
+        <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <KpiCard
+            label="Annualisert leie"
+            value={`kr ${formatNOK(totalAnnualRent)}`}
+            icon={Banknote}
+            color="green"
+          />
+          <KpiCard
+            label="Totalt areal"
+            value={`${formatNOK(totalAreaAll)} m²`}
+            icon={Ruler}
+            color="blue"
+          />
+          <KpiCard
+            label="Enheter"
+            value={totalVacantAll > 0 ? `${totalUnitsAll} (${totalVacantAll} ledige)` : String(totalUnitsAll)}
+            icon={Users}
+            color="purple"
+          />
+          <KpiCard
+            label="Selskaper"
+            value={String(companyCards.length)}
+            icon={Building2}
+            color="purple"
+          />
+        </div>
+      )}
 
       {companyCards.length === 0 ? (
         <div className="rounded-xl bg-white border border-gray-100 shadow-sm p-12 text-center">
