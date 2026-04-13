@@ -95,13 +95,22 @@ export default async function PropertyDetailPage({
         {` · ${property.company.name}`}
       </p>
 
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={`/api/streetview?address=${encodeURIComponent(`${address}, ${property.postalCode} ${property.postalPlace}`)}`}
-        alt={address}
-        className="mb-6 h-48 w-full rounded-xl object-cover bg-gray-100"
-        loading="lazy"
-      />
+      <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={`/api/streetview?address=${encodeURIComponent(`${address}, ${property.postalCode} ${property.postalPlace}`)}`}
+          alt={address}
+          className="h-48 w-full rounded-xl object-cover bg-gray-100"
+          loading="lazy"
+        />
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={`/api/staticmap?markers=${encodeURIComponent(`${address}, ${property.postalCode} ${property.postalPlace}, Norway`)}`}
+          alt={`Kart over ${address}`}
+          className="h-48 w-full rounded-xl object-cover bg-gray-100"
+          loading="lazy"
+        />
+      </div>
 
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
         <KpiCard
