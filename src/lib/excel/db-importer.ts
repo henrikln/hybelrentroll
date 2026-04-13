@@ -136,12 +136,40 @@ export async function importRentRollToDb(
     });
     const isLatestReport = !newerSnapshot;
 
-    // 7. Process each row in a transaction
+    // 7. Deduplicate rows by unitKey — Excel files often contain both old
+    //    (ledig) and new (aktiv) contract rows for the same unit. We keep
+    //    the "aktiv" row, or the one with the latest startDate if tied.
+    const rowsByKey = new Map<string, ParsedRow>();
+    for (const row of parsed.rows) {
+      const key = buildUnitKey(row);
+      const existing = rowsByKey.get(key);
+      if (!existing) {
+        rowsByKey.set(key, row);
+        continue;
+      }
+      // Prefer aktiv over ledig
+      const existingStatus = existing.contract.status.toLowerCase();
+      const newStatus = row.contract.status.toLowerCase();
+      if (existingStatus === "aktiv" && newStatus !== "aktiv") continue;
+      if (newStatus === "aktiv" && existingStatus !== "aktiv") {
+        rowsByKey.set(key, row);
+        continue;
+      }
+      // Same status — prefer later startDate
+      const existingStart = existing.contract.startDate?.getTime() ?? 0;
+      const newStart = row.contract.startDate?.getTime() ?? 0;
+      if (newStart > existingStart) {
+        rowsByKey.set(key, row);
+      }
+    }
+    const deduplicatedRows = [...rowsByKey.values()];
+
+    // 8. Process each row in a transaction
     let snapshotCount = 0;
     let eventCount = 0;
 
     await prisma.$transaction(async (tx) => {
-      for (const row of parsed.rows) {
+      for (const row of deduplicatedRows) {
         const unitKey = buildUnitKey(row);
 
         // Update current-state tables only if this is the latest report
@@ -401,12 +429,12 @@ export async function importRentRollToDb(
       }
     }, { maxWait: 15000, timeout: 60000 });
 
-    // 6. Mark import as completed
+    // Mark import as completed
     await prisma.rentRollImport.update({
       where: { id: importRecord.id },
       data: {
         status: "completed",
-        rowsImported: parsed.rows.length,
+        rowsImported: deduplicatedRows.length,
         rowsFailed: parsed.errors.length,
         errorLog: parsed.errors.length > 0
           ? (parsed.errors as unknown as Prisma.InputJsonValue)
@@ -416,7 +444,7 @@ export async function importRentRollToDb(
     });
 
     const properties = [
-      ...new Set(parsed.rows.map((r) => `${r.property.streetName} ${r.property.streetNumber}`)),
+      ...new Set(deduplicatedRows.map((r) => `${r.property.streetName} ${r.property.streetNumber}`)),
     ];
 
     return {
@@ -425,7 +453,7 @@ export async function importRentRollToDb(
       orgNumber: parsed.orgNumber,
       reportDate: parsed.reportDate,
       totalRows: parsed.totalRows,
-      parsedRows: parsed.rows.length,
+      parsedRows: deduplicatedRows.length,
       errorCount: parsed.errors.length,
       errors: parsed.errors,
       properties,
