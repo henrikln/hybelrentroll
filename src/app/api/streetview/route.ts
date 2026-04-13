@@ -20,7 +20,9 @@ export async function GET(req: NextRequest) {
   const res = await fetch(url.toString());
 
   if (!res.ok) {
-    return NextResponse.json({ error: "Street View API error" }, { status: res.status });
+    const body = await res.text();
+    console.error(`[streetview] Google API ${res.status}: ${body}`);
+    return NextResponse.json({ error: "Street View API error", details: body }, { status: res.status });
   }
 
   const buffer = await res.arrayBuffer();
