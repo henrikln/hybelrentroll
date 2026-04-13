@@ -12,15 +12,34 @@ async function addSender(formData: FormData) {
 
   const email = (formData.get("email") as string)?.toLowerCase().trim();
   const note = (formData.get("note") as string)?.trim() || null;
+  const targetAccountId = (formData.get("accountId") as string)?.trim() || null;
 
   if (!email) return;
 
   const existing = await prisma.allowedSender.findUnique({ where: { email } });
   if (existing) return;
 
-  // Tenant admins add senders to their own account; global admins also use their own
+  let accountId: string;
+
+  if (isGlobal && targetAccountId === "__new__") {
+    // Create a new account for this sender
+    const accountName = note || email.split("@")[0];
+    const account = await prisma.account.create({
+      data: { name: accountName },
+    });
+    accountId = account.id;
+  } else if (isGlobal && targetAccountId) {
+    // Verify the target account exists
+    const account = await prisma.account.findUnique({ where: { id: targetAccountId } });
+    if (!account) return;
+    accountId = targetAccountId;
+  } else {
+    // Tenant admins always add to their own account
+    accountId = myAccountId;
+  }
+
   await prisma.allowedSender.create({
-    data: { accountId: myAccountId, email, note },
+    data: { accountId, email, note },
   });
 
   revalidatePath("/admin/senders");
@@ -54,6 +73,14 @@ export default async function SendersPage() {
     orderBy: { createdAt: "desc" },
   });
 
+  // For global admins: list all accounts so they can assign senders
+  const accounts = isGlobalAdmin
+    ? await prisma.account.findMany({
+        select: { id: true, name: true },
+        orderBy: { name: "asc" },
+      })
+    : [];
+
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
@@ -85,6 +112,22 @@ export default async function SendersPage() {
           placeholder="Notat (valgfritt)"
           className="h-9 w-48 rounded-md border border-gray-200 bg-white px-3 text-sm outline-none focus:border-purple-400 focus:ring-1 focus:ring-purple-400"
         />
+        {isGlobalAdmin && (
+          <select
+            name="accountId"
+            className="h-9 rounded-md border border-gray-200 bg-white px-3 text-sm outline-none focus:border-purple-400 focus:ring-1 focus:ring-purple-400"
+          >
+            <option value={accountId}>Min konto</option>
+            <option value="__new__">+ Ny konto</option>
+            {accounts
+              .filter((a) => a.id !== accountId)
+              .map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+          </select>
+        )}
         <button
           type="submit"
           className="inline-flex h-9 items-center gap-1.5 rounded-md bg-purple-600 px-4 text-sm font-medium text-white hover:bg-purple-700"
