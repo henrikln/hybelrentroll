@@ -69,11 +69,17 @@ export async function importRentRollToDb(
   });
 
   // 3. Handle duplicates — a file for a given company+date is the truth for that date
-  //    Delete any existing import for the same company and report date
+  //    Delete ALL existing imports for the same company, report date, AND filename.
+  //    This catches both intentional re-imports and webhook retries.
   const existingImports = await prisma.rentRollImport.findMany({
     where: {
       companyId: company.id,
-      snapshots: { some: { reportDate } },
+      OR: [
+        // Same company+date (original dedup logic)
+        { snapshots: { some: { reportDate } } },
+        // Same company+filename (catches retries even before snapshots exist)
+        { filename: opts.filename },
+      ],
     },
     select: { id: true },
   });
