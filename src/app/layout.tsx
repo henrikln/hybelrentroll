@@ -8,8 +8,8 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Hybelrentroll",
-  description: "Rent roll management for Norwegian property owners",
+  title: "Hybel.no Viewer",
+  description: "Rent roll viewer for Norwegian property owners",
 };
 
 export default function RootLayout({

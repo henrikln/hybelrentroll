@@ -1,15 +1,13 @@
 import { signIn } from "@/lib/auth";
-import { Building2 } from "lucide-react";
 
 export default function SignInPage() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-50">
       <div className="w-full max-w-sm rounded-xl bg-white p-8 shadow-lg border border-gray-100">
-        <div className="flex items-center justify-center gap-2 mb-6">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-purple-600">
-            <Building2 className="h-5 w-5 text-white" />
-          </div>
-          <span className="text-xl font-bold text-gray-900">hybelrentroll</span>
+        <div className="flex flex-col items-center gap-1 mb-6">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/estatelab-logo.svg" alt="Estatelab" className="h-7" />
+          <span className="text-xs font-medium text-gray-400">Hybel.no Viewer</span>
         </div>
 
         <p className="text-center text-sm text-gray-500 mb-6">

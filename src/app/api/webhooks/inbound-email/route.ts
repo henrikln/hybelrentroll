@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { importRentRollToDb, type DbImportResult } from "@/lib/excel/db-importer";
 
-const FROM_EMAIL = "Hybelrentroll <noreply@estatelab.amp11.no>";
+const FROM_EMAIL = "Hybel.no Viewer <noreply@estatelab.amp11.no>";
 
 export async function POST(req: NextRequest) {
   try {
@@ -244,7 +244,7 @@ async function sendSuccessEmail(to: string, results: DbImportResult[]) {
     ``,
     `Se detaljer på https://hybelrentroll.vercel.app`,
     ``,
-    `— Hybelrentroll`,
+    `— Hybel.no Viewer`,
   ].join("\n"));
 }
 
@@ -258,7 +258,7 @@ async function sendErrorEmail(to: string, subject: string, body: string) {
     ``,
     `Ta kontakt med administrator hvis problemet vedvarer.`,
     ``,
-    `— Hybelrentroll`,
+    `— Hybel.no Viewer`,
   ].join("\n"));
 }
 
