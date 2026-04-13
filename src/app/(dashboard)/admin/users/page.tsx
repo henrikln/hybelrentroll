@@ -11,9 +11,8 @@ import {
   ShieldOff,
   UserX,
   UserCheck,
-  Pencil,
-  Check,
 } from "lucide-react";
+import { RenameAccountDialog } from "@/components/dashboard/rename-account-dialog";
 
 async function addUserToAccount(formData: FormData) {
   "use server";
@@ -169,28 +168,11 @@ export default async function AdminUsersPage() {
               <div className="border-b border-gray-50 px-5 py-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <form
+                    <RenameAccountDialog
+                      accountId={account.id}
+                      currentName={account.name}
                       action={renameAccount}
-                      className="flex items-center gap-1.5 group"
-                    >
-                      <input
-                        type="hidden"
-                        name="accountId"
-                        value={account.id}
-                      />
-                      <input
-                        name="name"
-                        defaultValue={account.name}
-                        className="text-sm font-semibold text-gray-900 bg-transparent border-b border-transparent hover:border-gray-300 focus:border-purple-400 focus:outline-none px-0 py-0"
-                      />
-                      <button
-                        type="submit"
-                        className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 text-gray-300 hover:text-purple-600 transition-opacity"
-                        title="Lagre navn"
-                      >
-                        <Check className="h-3.5 w-3.5" />
-                      </button>
-                    </form>
+                    />
                     <p className="text-xs text-gray-400">
                       {account._count.companies} selskap
                       {account._count.companies !== 1 ? "er" : ""} ·{" "}
