@@ -66,11 +66,10 @@ export function Sidebar() {
 
   return (
     <aside className="fixed left-0 top-0 z-30 flex h-screen w-60 flex-col border-r border-gray-100 bg-white">
-      <div className="flex h-16 items-center gap-2 px-6">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-600">
-          <Building2 className="h-4 w-4 text-white" />
-        </div>
-        <span className="text-lg font-bold text-gray-900">hybelrentroll</span>
+      <div className="flex h-16 items-center gap-2 px-4">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/estatelab-logo.svg" alt="Estatelab" className="h-5" />
+        <span className="text-xs font-medium text-gray-400">Hybel.no Viewer</span>
       </div>
 
       <ScrollArea className="flex-1 px-3 py-2">
