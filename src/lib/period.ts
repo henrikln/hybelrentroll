@@ -74,9 +74,20 @@ export async function getSnapshotData(
     include: {
       company: { select: { id: true, name: true, orgNumber: true } },
     },
+    orderBy: { createdAt: "desc" },
   });
 
-  return { reportDate, snapshots };
+  // Deduplicate: if the same unit (companyId + unitKey) appears multiple times
+  // for the same reportDate (e.g. from webhook retries), keep only the latest.
+  const seen = new Set<string>();
+  const deduped = snapshots.filter((s) => {
+    const key = `${s.companyId}_${s.unitKey}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  return { reportDate, snapshots: deduped };
 }
 
 /**
