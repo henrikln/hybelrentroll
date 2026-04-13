@@ -153,5 +153,5 @@ export async function requireAdmin(): Promise<string> {
     const { redirect } = await import("next/navigation");
     redirect("/");
   }
-  return session.accountId!;
+  return session!.accountId!;
 }
