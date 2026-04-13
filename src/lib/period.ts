@@ -74,7 +74,7 @@ export async function getSnapshotData(
     include: {
       company: { select: { id: true, name: true, orgNumber: true } },
     },
-    orderBy: { createdAt: "desc" },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
   });
 
   // Deduplicate: if the same unit (companyId + unitKey) appears multiple times
