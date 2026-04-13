@@ -86,8 +86,16 @@ export default async function EiendommerPage() {
             <Link
               key={property.id}
               href={`/eiendommer/${property.id}`}
-              className="rounded-xl bg-white border border-gray-100 shadow-sm p-5 hover:shadow-md transition-shadow block"
+              className="rounded-xl bg-white border border-gray-100 shadow-sm hover:shadow-md transition-shadow block overflow-hidden"
             >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={`/api/streetview?address=${encodeURIComponent(`${property.name}, ${property.postalCode} ${property.postalPlace}`)}`}
+                alt={property.name}
+                className="h-32 w-full object-cover bg-gray-100"
+                loading="lazy"
+              />
+              <div className="p-5">
               <div className="mb-3">
                 <h3 className="text-sm font-semibold text-gray-900">
                   {property.name}
@@ -132,6 +140,7 @@ export default async function EiendommerPage() {
                     </p>
                   </div>
                 </div>
+              </div>
               </div>
             </Link>
           ))}

@@ -96,6 +96,25 @@ export default async function CompanyDetailPage({
         </span>
       </h1>
 
+      {company.properties.length > 0 && (
+        <>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={`/api/staticmap?markers=${encodeURIComponent(
+              company.properties
+                .map(
+                  (p) =>
+                    `${p.streetName} ${p.streetNumber}, ${p.postalCode} ${p.postalPlace}, Norway`
+                )
+                .join("|")
+            )}`}
+            alt="Kart over eiendommer"
+            className="mb-6 h-48 w-full rounded-xl object-cover bg-gray-100"
+            loading="lazy"
+          />
+        </>
+      )}
+
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <KpiCard
           label="Årlig leie"
@@ -126,6 +145,54 @@ export default async function CompanyDetailPage({
           color="purple"
         />
       </div>
+
+      {company.properties.length > 0 && (
+        <>
+          <h2 className="mb-3 text-sm font-semibold text-gray-700">
+            Eiendommer ({company.properties.length})
+          </h2>
+          <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {company.properties.map((property) => {
+              const addr = `${property.streetName} ${property.streetNumber}`;
+              const pUnits = property.units.length;
+              const pVacant = property.units.filter((u) => {
+                const c = u.contracts[0];
+                return !c || c.status === "ledig";
+              }).length;
+              return (
+                <Link
+                  key={property.id}
+                  href={`/eiendommer/${property.id}`}
+                  className="rounded-xl bg-white border border-gray-100 shadow-sm hover:shadow-md transition-shadow block overflow-hidden"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={`/api/streetview?address=${encodeURIComponent(`${addr}, ${property.postalCode} ${property.postalPlace}`)}`}
+                    alt={addr}
+                    className="h-28 w-full object-cover bg-gray-100"
+                    loading="lazy"
+                  />
+                  <div className="p-4">
+                    <h3 className="text-sm font-semibold text-gray-900">
+                      {addr}
+                    </h3>
+                    <p className="text-xs text-gray-400">
+                      {property.postalCode} {property.postalPlace}
+                      {property.gnr > 0 &&
+                        ` · gnr. ${property.gnr} / bnr. ${property.bnr}`}
+                    </p>
+                    <p className="mt-1 text-xs text-gray-500">
+                      {pVacant > 0
+                        ? `${pUnits} enheter (${pVacant} ledige)`
+                        : `${pUnits} enheter`}
+                    </p>
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        </>
+      )}
 
       <h2 className="mb-3 text-sm font-semibold text-gray-700">
         Leietakere ({tenants.length})

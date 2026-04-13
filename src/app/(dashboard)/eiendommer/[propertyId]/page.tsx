@@ -89,11 +89,19 @@ export default async function PropertyDetailPage({
         <span className="mx-2 text-gray-300">/</span>
       </div>
       <h1 className="mb-1 text-xl font-semibold text-gray-900">{address}</h1>
-      <p className="mb-6 text-sm text-gray-400">
+      <p className="mb-4 text-sm text-gray-400">
         {property.postalCode} {property.postalPlace}
         {property.gnr > 0 && ` · gnr. ${property.gnr} / bnr. ${property.bnr}`}
         {` · ${property.company.name}`}
       </p>
+
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={`/api/streetview?address=${encodeURIComponent(`${address}, ${property.postalCode} ${property.postalPlace}`)}`}
+        alt={address}
+        className="mb-6 h-48 w-full rounded-xl object-cover bg-gray-100"
+        loading="lazy"
+      />
 
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
         <KpiCard
