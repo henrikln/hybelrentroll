@@ -1,7 +1,15 @@
 "use client";
 
-import { useState } from "react";
-import { Building, Banknote, Maximize, Home, X } from "lucide-react";
+import { useState, useMemo } from "react";
+import {
+  Building,
+  Banknote,
+  Maximize,
+  Home,
+  X,
+  ChevronUp,
+  ChevronDown,
+} from "lucide-react";
 import { formatNOKShort, formatNOK, formatArea } from "@/lib/format";
 
 interface UnitInfo {
@@ -26,6 +34,8 @@ interface PropertyRow {
   units: UnitInfo[];
 }
 
+type SortKey = "name" | "companyName" | "totalUnits" | "annualizedRent" | "areaSqm";
+
 const iconColors = [
   { bg: "bg-purple-100", icon: "text-purple-500" },
   { bg: "bg-emerald-100", icon: "text-emerald-500" },
@@ -35,8 +45,54 @@ const iconColors = [
   { bg: "bg-cyan-100", icon: "text-cyan-500" },
 ];
 
+function SortIcon({ active, dir }: { active: boolean; dir: "asc" | "desc" }) {
+  if (!active) return null;
+  return dir === "asc" ? (
+    <ChevronUp className="ml-0.5 inline h-3.5 w-3.5" />
+  ) : (
+    <ChevronDown className="ml-0.5 inline h-3.5 w-3.5" />
+  );
+}
+
 export function PropertyList({ properties }: { properties: PropertyRow[] }) {
   const [selected, setSelected] = useState<PropertyRow | null>(null);
+  const [sortKey, setSortKey] = useState<SortKey>("name");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir(key === "name" || key === "companyName" ? "asc" : "desc");
+    }
+  }
+
+  const sorted = useMemo(() => {
+    const arr = [...properties];
+    arr.sort((a, b) => {
+      let cmp = 0;
+      switch (sortKey) {
+        case "name":
+          cmp = a.name.localeCompare(b.name, "nb");
+          break;
+        case "companyName":
+          cmp = a.companyName.localeCompare(b.companyName, "nb");
+          break;
+        case "totalUnits":
+          cmp = a.totalUnits - b.totalUnits;
+          break;
+        case "annualizedRent":
+          cmp = a.annualizedRent - b.annualizedRent;
+          break;
+        case "areaSqm":
+          cmp = a.areaSqm - b.areaSqm;
+          break;
+      }
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+    return arr;
+  }, [properties, sortKey, sortDir]);
 
   if (properties.length === 0) {
     return (
@@ -49,6 +105,14 @@ export function PropertyList({ properties }: { properties: PropertyRow[] }) {
     );
   }
 
+  const columns: { key: SortKey; label: string }[] = [
+    { key: "name", label: "Eiendom" },
+    { key: "companyName", label: "Selskap" },
+    { key: "totalUnits", label: "Enheter" },
+    { key: "annualizedRent", label: "Annualisert" },
+    { key: "areaSqm", label: "Areal" },
+  ];
+
   return (
     <>
       <div className="rounded-xl bg-white border border-gray-100 shadow-sm">
@@ -58,25 +122,20 @@ export function PropertyList({ properties }: { properties: PropertyRow[] }) {
         <table className="w-full">
           <thead>
             <tr className="border-t border-gray-50">
-              <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-400">
-                Eiendom
-              </th>
-              <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-400">
-                Selskap
-              </th>
-              <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-400">
-                Enheter
-              </th>
-              <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-400">
-                Annualisert
-              </th>
-              <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-400">
-                Areal
-              </th>
+              {columns.map((col) => (
+                <th
+                  key={col.key}
+                  onClick={() => toggleSort(col.key)}
+                  className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-400 cursor-pointer select-none hover:text-gray-600"
+                >
+                  {col.label}
+                  <SortIcon active={sortKey === col.key} dir={sortDir} />
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
-            {properties.map((property, idx) => {
+            {sorted.map((property, idx) => {
               const colors = iconColors[idx % iconColors.length];
               return (
                 <tr
