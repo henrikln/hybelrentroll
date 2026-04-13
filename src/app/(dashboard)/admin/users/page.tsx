@@ -11,6 +11,8 @@ import {
   ShieldOff,
   UserX,
   UserCheck,
+  Pencil,
+  Check,
 } from "lucide-react";
 
 async function addUserToAccount(formData: FormData) {
@@ -109,6 +111,26 @@ async function toggleActive(formData: FormData) {
   revalidatePath("/admin/users");
 }
 
+async function renameAccount(formData: FormData) {
+  "use server";
+  const myAccountId = await requireAdmin();
+  const isGlobal = await getIsGlobalAdmin();
+
+  const targetAccountId = formData.get("accountId") as string;
+  const name = (formData.get("name") as string)?.trim();
+  if (!targetAccountId || !name) return;
+
+  // Tenant admins can only rename their own account
+  if (!isGlobal && targetAccountId !== myAccountId) return;
+
+  await prisma.account.update({
+    where: { id: targetAccountId },
+    data: { name },
+  });
+
+  revalidatePath("/admin/users");
+}
+
 export default async function AdminUsersPage() {
   const accountId = await requireAdmin();
   const isGlobalAdmin = await getIsGlobalAdmin();
@@ -147,9 +169,28 @@ export default async function AdminUsersPage() {
               <div className="border-b border-gray-50 px-5 py-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <h3 className="text-sm font-semibold text-gray-900">
-                      {account.name}
-                    </h3>
+                    <form
+                      action={renameAccount}
+                      className="flex items-center gap-1.5 group"
+                    >
+                      <input
+                        type="hidden"
+                        name="accountId"
+                        value={account.id}
+                      />
+                      <input
+                        name="name"
+                        defaultValue={account.name}
+                        className="text-sm font-semibold text-gray-900 bg-transparent border-b border-transparent hover:border-gray-300 focus:border-purple-400 focus:outline-none px-0 py-0"
+                      />
+                      <button
+                        type="submit"
+                        className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 text-gray-300 hover:text-purple-600 transition-opacity"
+                        title="Lagre navn"
+                      >
+                        <Check className="h-3.5 w-3.5" />
+                      </button>
+                    </form>
                     <p className="text-xs text-gray-400">
                       {account._count.companies} selskap
                       {account._count.companies !== 1 ? "er" : ""} ·{" "}

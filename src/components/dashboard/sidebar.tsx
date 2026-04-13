@@ -19,6 +19,7 @@ interface NavItem {
   label: string;
   href: string;
   icon: React.ElementType;
+  adminOnly?: boolean;
 }
 
 interface NavSection {
@@ -49,13 +50,13 @@ const navigation: NavSection[] = [
     title: "System",
     items: [
       { label: "Import", href: "/import", icon: Upload },
-      { label: "Avsendere", href: "/admin/senders", icon: Mail },
-      { label: "Brukere", href: "/admin/users", icon: Users },
+      { label: "Avsendere", href: "/admin/senders", icon: Mail, adminOnly: true },
+      { label: "Brukere", href: "/admin/users", icon: Users, adminOnly: true },
     ],
   },
 ];
 
-export function Sidebar() {
+export function Sidebar({ isAdmin }: { isAdmin: boolean }) {
   const pathname = usePathname();
 
   return (
@@ -68,42 +69,49 @@ export function Sidebar() {
 
       <ScrollArea className="flex-1 px-3 py-2">
         <nav className="space-y-1">
-          {navigation.map((section, sIdx) => (
-            <div key={sIdx} className={cn(sIdx > 0 && "mt-6")}>
-              {section.title && (
-                <p className="mb-2 px-3 text-xs font-medium uppercase tracking-wider text-gray-400">
-                  {section.title}
-                </p>
-              )}
-              {section.items.map((item) => {
-                const isActive =
-                  item.href === "/"
-                    ? pathname === "/"
-                    : pathname.startsWith(item.href);
-                const Icon = item.icon;
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={cn(
-                      "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                      isActive
-                        ? "bg-purple-50 text-purple-600"
-                        : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
-                    )}
-                  >
-                    <Icon
+          {navigation.map((section, sIdx) => {
+            const visibleItems = section.items.filter(
+              (item) => !item.adminOnly || isAdmin
+            );
+            if (visibleItems.length === 0) return null;
+
+            return (
+              <div key={sIdx} className={cn(sIdx > 0 && "mt-6")}>
+                {section.title && (
+                  <p className="mb-2 px-3 text-xs font-medium uppercase tracking-wider text-gray-400">
+                    {section.title}
+                  </p>
+                )}
+                {visibleItems.map((item) => {
+                  const isActive =
+                    item.href === "/"
+                      ? pathname === "/"
+                      : pathname.startsWith(item.href);
+                  const Icon = item.icon;
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
                       className={cn(
-                        "h-[18px] w-[18px]",
-                        isActive ? "text-purple-600" : "text-gray-400"
+                        "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                        isActive
+                          ? "bg-purple-50 text-purple-600"
+                          : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
                       )}
-                    />
-                    {item.label}
-                  </Link>
-                );
-              })}
-            </div>
-          ))}
+                    >
+                      <Icon
+                        className={cn(
+                          "h-[18px] w-[18px]",
+                          isActive ? "text-purple-600" : "text-gray-400"
+                        )}
+                      />
+                      {item.label}
+                    </Link>
+                  );
+                })}
+              </div>
+            );
+          })}
         </nav>
       </ScrollArea>
     </aside>
