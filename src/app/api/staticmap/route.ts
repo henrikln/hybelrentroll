@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
 
 export async function GET(req: NextRequest) {
+  const session = await auth();
+  if (!session?.accountId) {
+    return NextResponse.json({ error: "Ikke autentisert" }, { status: 401 });
+  }
+
   const markers = req.nextUrl.searchParams.get("markers");
   if (!markers) {
     return NextResponse.json({ error: "Missing markers" }, { status: 400 });

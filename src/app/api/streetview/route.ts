@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
 
 export async function GET(req: NextRequest) {
+  const session = await auth();
+  if (!session?.accountId) {
+    return NextResponse.json({ error: "Ikke autentisert" }, { status: 401 });
+  }
+
   const address = req.nextUrl.searchParams.get("address");
   if (!address) {
     return NextResponse.json({ error: "Missing address" }, { status: 400 });
@@ -24,7 +30,7 @@ export async function GET(req: NextRequest) {
   if (!res.ok) {
     const body = await res.text();
     console.error(`[streetview] Google API ${res.status}: ${body}`);
-    return NextResponse.json({ error: "Street View API error", details: body }, { status: res.status });
+    return NextResponse.json({ error: "Street View API error" }, { status: res.status });
   }
 
   const buffer = await res.arrayBuffer();

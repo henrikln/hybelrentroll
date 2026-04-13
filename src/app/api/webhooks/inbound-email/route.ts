@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Webhook } from "svix";
 import { prisma } from "@/lib/db";
 import { importRentRollToDb, type DbImportResult } from "@/lib/excel/db-importer";
 
@@ -6,7 +7,35 @@ const FROM_EMAIL = "Hybel.no Viewer <noreply@estatelab.amp11.no>";
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
+    const rawBody = await req.text();
+
+    // Verify webhook signature if secret is configured
+    const webhookSecret = process.env.RESEND_WEBHOOK_SECRET;
+    if (webhookSecret) {
+      const svixId = req.headers.get("svix-id");
+      const svixTimestamp = req.headers.get("svix-timestamp");
+      const svixSignature = req.headers.get("svix-signature");
+
+      if (!svixId || !svixTimestamp || !svixSignature) {
+        console.warn("[inbound-email] Missing svix headers");
+        return NextResponse.json({ error: "Missing webhook signature" }, { status: 401 });
+      }
+
+      try {
+        new Webhook(webhookSecret).verify(rawBody, {
+          "svix-id": svixId,
+          "svix-timestamp": svixTimestamp,
+          "svix-signature": svixSignature,
+        });
+      } catch {
+        console.warn("[inbound-email] Invalid webhook signature");
+        return NextResponse.json({ error: "Invalid webhook signature" }, { status: 401 });
+      }
+    } else {
+      console.warn("[inbound-email] RESEND_WEBHOOK_SECRET not set — skipping signature verification");
+    }
+
+    const body = JSON.parse(rawBody);
 
     console.log("[inbound-email] webhook type:", body.type);
 

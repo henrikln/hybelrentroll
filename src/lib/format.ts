@@ -1,9 +1,11 @@
+const nokFormatter = new Intl.NumberFormat("nb-NO", {
+  style: "decimal",
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 0,
+});
+
 export function formatNOK(value: number): string {
-  return new Intl.NumberFormat("nb-NO", {
-    style: "decimal",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(value);
+  return nokFormatter.format(value);
 }
 
 export function formatNOKShort(value: number): string {
@@ -17,8 +19,10 @@ export function formatNOKShort(value: number): string {
   return formatNOK(value);
 }
 
+const areaFormatter = new Intl.NumberFormat("nb-NO");
+
 export function formatArea(sqm: number): string {
-  return `${new Intl.NumberFormat("nb-NO").format(sqm)} m²`;
+  return `${areaFormatter.format(sqm)} m²`;
 }
 
 export function formatDecimal(value: number, decimals = 1): string {

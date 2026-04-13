@@ -53,9 +53,19 @@ export async function importRentRollToDb(
       `Ugyldig rapportdato "${parsed.reportDate}". Forventet format DD.MM.YYYY.`
     );
   }
+  if (reportDate.getFullYear() < 2000 || reportDate.getFullYear() > 2100) {
+    throw new Error(
+      `Urealistisk rapportdato: ${parsed.reportDate}. Forventet dato mellom 2000 og 2100.`
+    );
+  }
 
   // 2. Find or create company by org number
-  const orgNumber = parsed.orgNumber ?? "unknown";
+  if (!parsed.orgNumber) {
+    throw new Error(
+      "Kunne ikke lese organisasjonsnummer fra filen. Første linje må inneholde orgnr i parentes, f.eks. (123456789)."
+    );
+  }
+  const orgNumber = parsed.orgNumber;
   const company = await prisma.company.upsert({
     where: {
       accountId_orgNumber: { accountId, orgNumber },
@@ -126,16 +136,6 @@ export async function importRentRollToDb(
       }
     }
 
-    // 6. Determine if this is the latest report for the company
-    //    Only update current-state tables (Property/Unit/Contract) if so
-    const newerSnapshot = await prisma.rentRollSnapshot.findFirst({
-      where: {
-        companyId: company.id,
-        reportDate: { gt: reportDate },
-      },
-    });
-    const isLatestReport = !newerSnapshot;
-
     // 7. Deduplicate rows by unitKey — Excel files often contain both old
     //    (ledig) and new (aktiv) contract rows for the same unit. We keep
     //    the "aktiv" row, or the one with the latest startDate if tied.
@@ -169,6 +169,16 @@ export async function importRentRollToDb(
     let eventCount = 0;
 
     await prisma.$transaction(async (tx) => {
+      // Determine if this is the latest report for the company
+      // Done inside transaction for consistency
+      const newerSnapshot = await tx.rentRollSnapshot.findFirst({
+        where: {
+          companyId: company.id,
+          reportDate: { gt: reportDate },
+        },
+      });
+      const isLatestReport = !newerSnapshot;
+
       for (const row of deduplicatedRows) {
         const unitKey = buildUnitKey(row);
 
@@ -427,7 +437,7 @@ export async function importRentRollToDb(
           eventCount++;
         }
       }
-    }, { maxWait: 15000, timeout: 60000 });
+    }, { maxWait: 15000, timeout: 120000 });
 
     // Mark import as completed
     await prisma.rentRollImport.update({

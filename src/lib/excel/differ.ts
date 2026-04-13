@@ -145,15 +145,25 @@ export function diffSnapshots(
     });
   }
 
-  // Contract renewed (end_date extended)
-  if (!dateEqual(prev.endDate, curr.endDate) && curr.endDate && prev.endDate && curr.endDate > prev.endDate) {
-    events.push({
-      unitKey: curr.unitKey,
-      eventType: "contract_renewed",
-      description: `${label}: Kontrakt forlenget til ${curr.endDate.toLocaleDateString("nb-NO")}`,
-      oldValue: { endDate: prev.endDate },
-      newValue: { endDate: curr.endDate },
-    });
+  // Contract end date changed
+  if (!dateEqual(prev.endDate, curr.endDate) && curr.endDate) {
+    if (prev.endDate && curr.endDate > prev.endDate) {
+      events.push({
+        unitKey: curr.unitKey,
+        eventType: "contract_renewed",
+        description: `${label}: Kontrakt forlenget til ${curr.endDate.toLocaleDateString("nb-NO")}`,
+        oldValue: { endDate: prev.endDate },
+        newValue: { endDate: curr.endDate },
+      });
+    } else if (!prev.endDate) {
+      events.push({
+        unitKey: curr.unitKey,
+        eventType: "contract_renewed",
+        description: `${label}: Kontraktsluttdato satt til ${curr.endDate.toLocaleDateString("nb-NO")}`,
+        oldValue: { endDate: null },
+        newValue: { endDate: curr.endDate },
+      });
+    }
   }
 
   // Status change

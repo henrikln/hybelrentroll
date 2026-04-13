@@ -2,7 +2,10 @@ import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
 import { prisma } from "@/lib/db";
 
-const SUPER_ADMINS = ["henrikln@nagelgaarden.no"];
+const SUPER_ADMINS = (process.env.SUPER_ADMIN_EMAILS ?? "")
+  .split(",")
+  .map((e) => e.trim().toLowerCase())
+  .filter(Boolean);
 
 declare module "next-auth" {
   interface Session {
@@ -89,6 +92,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         user.isGlobalAdmin = dbUser.globalAdmin;
       } catch (err) {
         console.error("[auth] Failed to resolve account:", err);
+        return false;
       }
 
       return true;
