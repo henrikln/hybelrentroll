@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { prisma } from "@/lib/db";
+import { requireAdmin } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { Mail, Plus, Trash2 } from "lucide-react";
 
@@ -13,6 +14,7 @@ async function getSenders() {
 
 async function addSender(formData: FormData) {
   "use server";
+  await requireAdmin();
 
   const email = (formData.get("email") as string)?.toLowerCase().trim();
   const note = (formData.get("note") as string)?.trim() || null;
@@ -40,6 +42,7 @@ async function addSender(formData: FormData) {
 
 async function removeSender(formData: FormData) {
   "use server";
+  await requireAdmin();
 
   const id = formData.get("id") as string;
   if (!id) return;
@@ -49,6 +52,7 @@ async function removeSender(formData: FormData) {
 }
 
 export default async function SendersPage() {
+  await requireAdmin();
   const senders = await getSenders();
 
   return (
@@ -62,7 +66,7 @@ export default async function SendersPage() {
       <p className="mb-6 text-sm text-gray-500">
         E-postadresser som kan sende rent roll-filer til{" "}
         <span className="font-mono text-gray-700">
-          import@doodrenios.resend.app
+          import@estatelab.amp11.no
         </span>
         . Innloggede brukere registreres automatisk.
       </p>

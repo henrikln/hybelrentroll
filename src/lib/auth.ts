@@ -2,15 +2,16 @@ import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
 import { prisma } from "@/lib/db";
 
+const SUPER_ADMINS = ["henrikln@nagelgaarden.no"];
+
 declare module "next-auth" {
   interface Session {
     accountId?: string;
+    isAdmin?: boolean;
   }
-}
-
-declare module "next-auth" {
   interface User {
     accountId?: string;
+    isAdmin?: boolean;
   }
 }
 
@@ -37,6 +38,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           include: { account: true },
         });
 
+        let accountId: string;
+
         if (!existing) {
           // New user — create a new account (tenant)
           const account = await prisma.account.create({
@@ -47,10 +50,31 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
               },
             },
           });
-          user.accountId = account.id;
+          accountId = account.id;
         } else {
-          user.accountId = existing.accountId;
+          accountId = existing.accountId;
         }
+
+        // Ensure User record exists
+        const isSuperAdmin = SUPER_ADMINS.includes(email);
+        const dbUser = await prisma.user.upsert({
+          where: { email },
+          update: { name: user.name ?? undefined },
+          create: {
+            accountId,
+            email,
+            name: user.name ?? null,
+            role: isSuperAdmin ? "admin" : "member",
+          },
+        });
+
+        // Block deactivated users
+        if (!dbUser.active) {
+          return false;
+        }
+
+        user.accountId = accountId;
+        user.isAdmin = dbUser.role === "admin";
       } catch (err) {
         console.error("[auth] Failed to resolve account:", err);
       }
@@ -60,20 +84,27 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     async jwt({ token, user }) {
       if (user?.accountId) {
         token.accountId = user.accountId;
+        token.isAdmin = user.isAdmin;
       }
       // If accountId not in token yet (e.g. existing session), look it up
       if (!token.accountId && token.email) {
+        const email = (token.email as string).toLowerCase();
         const sender = await prisma.allowedSender.findUnique({
-          where: { email: (token.email as string).toLowerCase() },
+          where: { email },
         });
         if (sender) {
           token.accountId = sender.accountId;
+        }
+        const dbUser = await prisma.user.findUnique({ where: { email } });
+        if (dbUser) {
+          token.isAdmin = dbUser.role === "admin";
         }
       }
       return token;
     },
     async session({ session, token }) {
       session.accountId = token.accountId as string | undefined;
+      session.isAdmin = token.isAdmin as boolean | undefined;
       return session;
     },
     authorized({ auth, request }) {
@@ -103,4 +134,24 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 export async function getAccountId(): Promise<string | null> {
   const session = await auth();
   return session?.accountId ?? null;
+}
+
+/**
+ * Check if the current user is an admin.
+ */
+export async function getIsAdmin(): Promise<boolean> {
+  const session = await auth();
+  return session?.isAdmin === true;
+}
+
+/**
+ * Require admin access. Returns accountId or throws redirect.
+ */
+export async function requireAdmin(): Promise<string> {
+  const session = await auth();
+  if (!session?.isAdmin) {
+    const { redirect } = await import("next/navigation");
+    redirect("/");
+  }
+  return session.accountId!;
 }

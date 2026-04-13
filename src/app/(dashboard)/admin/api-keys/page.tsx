@@ -1,4 +1,7 @@
-export default function ApiKeysPage() {
+import { requireAdmin } from "@/lib/auth";
+
+export default async function ApiKeysPage() {
+  await requireAdmin();
   return (
     <div>
       <h1 className="mb-6 text-xl font-semibold text-gray-900">API-nøkler</h1>
