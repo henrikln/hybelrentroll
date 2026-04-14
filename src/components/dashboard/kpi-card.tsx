@@ -1,3 +1,4 @@
+import { TrendingUp, TrendingDown, Minus } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -7,6 +8,10 @@ interface KpiCardProps {
   unit?: string;
   icon: LucideIcon;
   color: "green" | "blue" | "purple" | "amber";
+  /** Formatted string like "+3,2%" or "-1 enhet". Null = no trend shown. */
+  trend?: string | null;
+  /** Direction: "up" = good (green), "down" = bad (red), "neutral" = gray. */
+  trendDirection?: "up" | "down" | "neutral";
 }
 
 const colorMap = {
@@ -28,7 +33,19 @@ const colorMap = {
   },
 };
 
-export function KpiCard({ label, value, unit, icon: Icon, color }: KpiCardProps) {
+const trendColorMap = {
+  up: "text-emerald-600",
+  down: "text-red-500",
+  neutral: "text-gray-400",
+};
+
+const TrendIcon = {
+  up: TrendingUp,
+  down: TrendingDown,
+  neutral: Minus,
+};
+
+export function KpiCard({ label, value, unit, icon: Icon, color, trend, trendDirection }: KpiCardProps) {
   const colors = colorMap[color];
 
   return (
@@ -47,6 +64,12 @@ export function KpiCard({ label, value, unit, icon: Icon, color }: KpiCardProps)
           {value}
           {unit && <span className="ml-1 text-base font-normal text-gray-400">{unit}</span>}
         </p>
+        {trend && trendDirection && (
+          <div className={cn("mt-0.5 flex items-center gap-1 text-xs font-medium", trendColorMap[trendDirection])}>
+            {(() => { const TIcon = TrendIcon[trendDirection]; return <TIcon className="h-3 w-3" />; })()}
+            <span>{trend}</span>
+          </div>
+        )}
       </div>
     </div>
   );
