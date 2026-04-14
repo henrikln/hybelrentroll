@@ -45,7 +45,8 @@ export interface SnapshotUnit {
 /**
  * Get snapshot-based data for a given account and optional period.
  * If period is null, returns data from the latest report date.
- * Returns null if no snapshots exist.
+ * Uses PostgreSQL DISTINCT ON to deduplicate at the DB level — only the
+ * latest snapshot per (company_id, unit_key) is returned.
  */
 export async function getSnapshotData(
   accountId: string,
@@ -66,28 +67,85 @@ export async function getSnapshotData(
 
   if (!reportDate) return null;
 
+  // Use DISTINCT ON to deduplicate at DB level — keeps only the latest
+  // snapshot per (company_id, unit_key), avoiding fetching all duplicates.
+  const snapshotIds = await prisma.$queryRaw<Array<{ id: string }>>`
+    SELECT DISTINCT ON (s.company_id, s.unit_key) s.id
+    FROM rent_roll_snapshots s
+    JOIN companies c ON c.id = s.company_id
+    WHERE c.account_id = ${accountId}::uuid
+      AND s.report_date = ${reportDate}
+    ORDER BY s.company_id, s.unit_key, s.created_at DESC, s.id DESC
+  `;
+
+  if (snapshotIds.length === 0) {
+    return { reportDate, snapshots: [] };
+  }
+
   const snapshots = await prisma.rentRollSnapshot.findMany({
-    where: {
-      company: { accountId },
-      reportDate,
-    },
+    where: { id: { in: snapshotIds.map((r) => r.id) } },
     include: {
       company: { select: { id: true, name: true, orgNumber: true } },
     },
-    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
   });
 
-  // Deduplicate: if the same unit (companyId + unitKey) appears multiple times
-  // for the same reportDate (e.g. from webhook retries), keep only the latest.
-  const seen = new Set<string>();
-  const deduped = snapshots.filter((s) => {
-    const key = `${s.companyId}_${s.unitKey}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+  return { reportDate, snapshots };
+}
 
-  return { reportDate, snapshots: deduped };
+/**
+ * Get all distinct report dates for an account, ordered descending.
+ * Useful for period selectors and trend calculations.
+ */
+export async function getReportDates(accountId: string): Promise<Date[]> {
+  const rows = await prisma.$queryRaw<Array<{ report_date: Date }>>`
+    SELECT DISTINCT s.report_date
+    FROM rent_roll_snapshots s
+    JOIN companies c ON c.id = s.company_id
+    WHERE c.account_id = ${accountId}::uuid
+    ORDER BY s.report_date DESC
+  `;
+  return rows.map((r) => r.report_date);
+}
+
+/** Aggregate helpers for SnapshotUnit arrays */
+export function aggregateUnits(units: SnapshotUnit[]) {
+  const totalUnits = units.length;
+  const vacantUnits = units.filter(
+    (u) => !u.status || u.status === "ledig"
+  ).length;
+  const annualizedRent = units.reduce(
+    (sum, u) => sum + u.monthlyRent * 12,
+    0
+  );
+  const totalArea = units.reduce((sum, u) => sum + u.areaSqm, 0);
+  return { totalUnits, vacantUnits, annualizedRent, totalArea };
+}
+
+/** Group snapshot units by company+address into property buckets */
+export function groupByProperty(units: SnapshotUnit[]) {
+  const map = new Map<string, { first: SnapshotUnit; units: SnapshotUnit[] }>();
+  for (const u of units) {
+    const key = `${u.companyId}_${u.streetName} ${u.streetNumber}`;
+    if (!map.has(key)) {
+      map.set(key, { first: u, units: [] });
+    }
+    map.get(key)!.units.push(u);
+  }
+  return map;
+}
+
+/** Group snapshot units by companyId */
+export function groupByCompany(units: SnapshotUnit[]) {
+  const map = new Map<string, { first: SnapshotUnit; units: SnapshotUnit[]; addresses: Set<string> }>();
+  for (const u of units) {
+    if (!map.has(u.companyId)) {
+      map.set(u.companyId, { first: u, units: [], addresses: new Set() });
+    }
+    const entry = map.get(u.companyId)!;
+    entry.units.push(u);
+    entry.addresses.add(`${u.streetName} ${u.streetNumber}`);
+  }
+  return map;
 }
 
 /**
