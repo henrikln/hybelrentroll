@@ -7,11 +7,20 @@ import { notFound } from "next/navigation";
 import { Banknote, Users, Ruler } from "lucide-react";
 import { KpiCard } from "@/components/dashboard/kpi-card";
 import { TenantTable, type TenantRow } from "@/components/dashboard/tenant-table";
+import { UnitTable, type UnitRow } from "@/components/dashboard/unit-table";
 import { getSnapshotData, normalizeSnapshots, type SnapshotUnit } from "@/lib/period";
 import Link from "next/link";
 
 function toNum(d: { toNumber(): number } | null | undefined): number {
   return d ? d.toNumber() : 0;
+}
+
+function calcDurationMonths(start: Date | null, end: Date | null): number | null {
+  if (!start || !end) return null;
+  return (
+    (end.getFullYear() - start.getFullYear()) * 12 +
+    (end.getMonth() - start.getMonth())
+  );
 }
 
 interface PropertyData {
@@ -26,6 +35,7 @@ interface PropertyData {
   totalUnits: number;
   vacantUnits: number;
   tenants: TenantRow[];
+  units: UnitRow[];
 }
 
 async function getLiveData(
@@ -89,6 +99,26 @@ async function getLiveData(
 
   tenants.sort((a, b) => a.name.localeCompare(b.name, "nb"));
 
+  const unitRows: UnitRow[] = allUnits.map((u) => {
+    const c = u.contracts[0];
+    const status: UnitRow["status"] =
+      !c || c.status === "ledig" ? "ledig" : c.status === "oppsagt" ? "oppsagt" : "aktiv";
+    const rent = c ? toNum(c.monthlyRent) : 0;
+    const prevRent = c?.rentBeforeLastAdjustment ? toNum(c.rentBeforeLastAdjustment) : null;
+
+    return {
+      id: u.id,
+      unitNumber: u.unitNumber || u.customNumber || "—",
+      areaSqm: toNum(u.areaSqm),
+      status,
+      monthlyRent: rent,
+      previousRent: prevRent,
+      endDate: c?.endDate ? c.endDate.toISOString().slice(0, 10) : null,
+      durationMonths: c ? calcDurationMonths(c.startDate, c.endDate) : null,
+      lastKnownRent: status === "ledig" ? rent : null,
+    };
+  });
+
   return {
     address: `${first.streetName} ${first.streetNumber}`,
     postalCode: first.postalCode,
@@ -101,6 +131,7 @@ async function getLiveData(
     totalUnits,
     vacantUnits,
     tenants,
+    units: unitRows,
   };
 }
 
@@ -144,6 +175,25 @@ function getSnapshotPropertyData(
 
   tenants.sort((a, b) => a.name.localeCompare(b.name, "nb"));
 
+  const unitRows: UnitRow[] = propertyUnits.map((u) => {
+    const status: UnitRow["status"] =
+      !u.status || u.status === "ledig" ? "ledig" : u.status === "oppsagt" ? "oppsagt" : "aktiv";
+    const startDate = u.startDate ? new Date(u.startDate) : null;
+    const endDate = u.endDate ? new Date(u.endDate) : null;
+
+    return {
+      id: u.id,
+      unitNumber: u.unitNumber,
+      areaSqm: u.areaSqm,
+      status,
+      monthlyRent: u.monthlyRent,
+      previousRent: null, // Not available in snapshot data
+      endDate: u.endDate ? u.endDate.toISOString().slice(0, 10) : null,
+      durationMonths: calcDurationMonths(startDate, endDate),
+      lastKnownRent: status === "ledig" ? u.monthlyRent : null,
+    };
+  });
+
   return {
     address: `${first.streetName} ${first.streetNumber}`,
     postalCode: first.postalCode,
@@ -156,6 +206,7 @@ function getSnapshotPropertyData(
     totalUnits,
     vacantUnits,
     tenants,
+    units: unitRows,
   };
 }
 
@@ -208,6 +259,7 @@ export default async function PropertyDetailPage({
     totalUnits,
     vacantUnits,
     tenants,
+    units,
   } = data;
 
   return (
@@ -269,6 +321,20 @@ export default async function PropertyDetailPage({
           color="purple"
         />
       </div>
+
+      <h2 className="mb-3 text-sm font-semibold text-gray-700">
+        Boenheter ({units.length})
+      </h2>
+
+      {units.length === 0 ? (
+        <div className="mb-6 rounded-xl bg-white border border-gray-100 shadow-sm p-8 text-center">
+          <p className="text-sm text-gray-400">Ingen boenheter registrert.</p>
+        </div>
+      ) : (
+        <div className="mb-6">
+          <UnitTable units={units} />
+        </div>
+      )}
 
       <h2 className="mb-3 text-sm font-semibold text-gray-700">
         Leietakere ({tenants.length})
