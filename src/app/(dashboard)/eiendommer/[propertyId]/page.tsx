@@ -32,38 +32,102 @@ async function getLiveData(
   accountId: string,
   propertyId: string
 ): Promise<PropertyData | null> {
-  const property = await prisma.property.findFirst({
-    where: { id: propertyId, company: { accountId } },
-    include: {
-      company: true,
-      units: {
-        include: {
-          contracts: {
-            include: { leaseholder: true },
-            orderBy: { createdAt: "desc" },
+  // propertyId can be a UUID (legacy) or "companyId_address" (new grouped format)
+  // Try to parse as companyId_address first
+  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/;
+  const uuidMatch = propertyId.match(uuidPattern);
+
+  let properties: Array<{
+    streetName: string;
+    streetNumber: string;
+    postalCode: string;
+    postalPlace: string;
+    gnr: number;
+    bnr: number;
+    company: { name: string };
+    units: Array<{
+      id: string;
+      unitNumber: string;
+      customNumber: string;
+      areaSqm: { toNumber(): number } | null;
+      floor: number | null;
+      unitType: string;
+      contracts: Array<{
+        status: string;
+        monthlyRent: { toNumber(): number } | null;
+        leaseholder: { id: string; name: string; email: string } | null;
+      }>;
+    }>;
+  }>;
+
+  if (uuidMatch && propertyId.length > 36 && propertyId[36] === "_") {
+    // New format: companyId_address (e.g. "uuid_Øyjordsveien 3")
+    const companyId = propertyId.slice(0, 36);
+    const address = propertyId.slice(37);
+    // Split address into streetName + streetNumber (last word)
+    const lastSpace = address.lastIndexOf(" ");
+    const streetName = lastSpace > 0 ? address.slice(0, lastSpace) : address;
+    const streetNumber = lastSpace > 0 ? address.slice(lastSpace + 1) : "";
+
+    properties = await prisma.property.findMany({
+      where: {
+        companyId,
+        streetName,
+        streetNumber,
+        company: { accountId },
+      },
+      include: {
+        company: true,
+        units: {
+          include: {
+            contracts: {
+              include: { leaseholder: true },
+              orderBy: { createdAt: "desc" },
+            },
           },
         },
       },
-    },
-  });
+    });
+  } else {
+    // Legacy UUID format — single property lookup
+    const prop = await prisma.property.findFirst({
+      where: { id: propertyId, company: { accountId } },
+      include: {
+        company: true,
+        units: {
+          include: {
+            contracts: {
+              include: { leaseholder: true },
+              orderBy: { createdAt: "desc" },
+            },
+          },
+        },
+      },
+    });
+    properties = prop ? [prop] : [];
+  }
 
-  if (!property) return null;
+  if (properties.length === 0) return null;
 
-  const totalUnits = property.units.length;
-  const vacantUnits = property.units.filter((u) => {
+  // Merge all matching properties (handles duplicate DB records for same address)
+  const first = properties[0];
+  const allUnits = properties.flatMap((p) => p.units);
+
+  const totalUnits = allUnits.length;
+  const vacantUnits = allUnits.filter((u) => {
     const c = u.contracts[0];
     return !c || c.status === "ledig";
   }).length;
-  const annualRent = property.units.reduce((sum, u) => {
+  const annualRent = allUnits.reduce((sum, u) => {
     const c = u.contracts[0];
     return sum + (c ? toNum(c.monthlyRent) * 12 : 0);
   }, 0);
-  const totalArea = property.units.reduce(
+  const totalArea = allUnits.reduce(
     (sum, u) => sum + toNum(u.areaSqm),
     0
   );
 
-  const tenants: TenantRow[] = property.units
+  const tenants: TenantRow[] = allUnits
     .filter((u) => {
       const c = u.contracts[0];
       return c?.leaseholder && c.status === "aktiv";
@@ -76,8 +140,8 @@ async function getLiveData(
         name: lh.name,
         email: lh.email || null,
         unitNumber: u.unitNumber || u.customNumber || "—",
-        address: `${property.streetName} ${property.streetNumber}`,
-        company: property.company.name,
+        address: `${first.streetName} ${first.streetNumber}`,
+        company: first.company.name,
         areaSqm: toNum(u.areaSqm),
         monthlyRent: toNum(contract.monthlyRent),
       };
@@ -86,12 +150,12 @@ async function getLiveData(
   tenants.sort((a, b) => a.name.localeCompare(b.name, "nb"));
 
   return {
-    address: `${property.streetName} ${property.streetNumber}`,
-    postalCode: property.postalCode,
-    postalPlace: property.postalPlace,
-    gnr: property.gnr,
-    bnr: property.bnr,
-    companyName: property.company.name,
+    address: `${first.streetName} ${first.streetNumber}`,
+    postalCode: first.postalCode,
+    postalPlace: first.postalPlace,
+    gnr: first.gnr,
+    bnr: first.bnr,
+    companyName: first.company.name,
     annualRent,
     totalArea,
     totalUnits,
