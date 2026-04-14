@@ -171,18 +171,19 @@ export async function importRentRollToDb(
           // Upsert property
           const property = await tx.property.upsert({
             where: {
-              companyId_streetName_streetNumber_postalCode_gnr_bnr: {
+              companyId_streetName_streetNumber: {
                 companyId: company.id,
                 streetName: row.property.streetName,
                 streetNumber: row.property.streetNumber,
-                postalCode: row.property.postalCode,
-                gnr: row.property.gnr ?? 0,
-                bnr: row.property.bnr ?? 0,
               },
             },
             update: {
+              postalCode: row.property.postalCode,
               postalPlace: row.property.postalPlace,
               municipality: row.property.municipality,
+              gnr: row.property.gnr ?? 0,
+              bnr: row.property.bnr ?? 0,
+              snr: row.property.snr,
             },
             create: {
               companyId: company.id,

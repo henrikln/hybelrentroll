@@ -32,63 +32,46 @@ async function getDataFromLiveTables(accountId: string) {
     },
   });
 
-  // Group by company + address to merge duplicate Property records
-  // (can happen when imports have different gnr/bnr for the same address)
-  const propertyGroupMap = new Map<string, {
-    id: string;
-    companyName: string;
-    name: string;
-    units: { id: string; unitNumber: string; unitType: string; areaSqm: number; floor: number | null; status: string; leaseholderName: string | null; monthlyRent: number }[];
-  }>();
-
-  for (const company of companies) {
-    for (const property of company.properties) {
-      const addr = `${property.streetName} ${property.streetNumber}`;
-      const key = `${company.id}_${addr}`;
-
-      if (!propertyGroupMap.has(key)) {
-        propertyGroupMap.set(key, {
-          id: key,
-          companyName: company.name,
-          name: addr,
-          units: [],
-        });
-      }
-
-      const group = propertyGroupMap.get(key)!;
-      for (const u of property.units) {
+  const propertyRows = companies.flatMap((company) =>
+    company.properties.map((property) => {
+      const totalUnits = property.units.length;
+      const vacantUnits = property.units.filter((u) => {
         const contract = u.contracts[0];
-        group.units.push({
-          id: u.id,
-          unitNumber: u.unitNumber || u.customNumber || "—",
-          unitType: u.unitType,
-          areaSqm: toNum(u.areaSqm),
-          floor: u.floor,
-          status: contract?.status ?? "ledig",
-          leaseholderName: contract?.leaseholder?.name ?? null,
-          monthlyRent: contract ? toNum(contract.monthlyRent) : 0,
-        });
-      }
-    }
-  }
+        return !contract || contract.status === "ledig";
+      }).length;
+      const annualizedRent = property.units.reduce((sum, u) => {
+        const contract = u.contracts[0];
+        return sum + (contract ? toNum(contract.monthlyRent) * 12 : 0);
+      }, 0);
+      const totalArea = property.units.reduce(
+        (sum, u) => sum + toNum(u.areaSqm),
+        0
+      );
 
-  const propertyRows = [...propertyGroupMap.values()].map((group) => {
-    const totalUnits = group.units.length;
-    const vacantUnits = group.units.filter((u) => u.status === "ledig").length;
-    const annualizedRent = group.units.reduce((sum, u) => sum + u.monthlyRent * 12, 0);
-    const totalArea = group.units.reduce((sum, u) => sum + u.areaSqm, 0);
-
-    return {
-      id: group.id,
-      companyName: group.companyName,
-      name: group.name,
-      annualizedRent,
-      areaSqm: totalArea,
-      totalUnits,
-      vacantUnits,
-      units: group.units,
-    };
-  });
+      return {
+        id: property.id,
+        companyName: company.name,
+        name: `${property.streetName} ${property.streetNumber}`,
+        annualizedRent,
+        areaSqm: totalArea,
+        totalUnits,
+        vacantUnits,
+        units: property.units.map((u) => {
+          const contract = u.contracts[0];
+          return {
+            id: u.id,
+            unitNumber: u.unitNumber || u.customNumber || "—",
+            unitType: u.unitType,
+            areaSqm: toNum(u.areaSqm),
+            floor: u.floor,
+            status: contract?.status ?? "ledig",
+            leaseholderName: contract?.leaseholder?.name ?? null,
+            monthlyRent: contract ? toNum(contract.monthlyRent) : 0,
+          };
+        }),
+      };
+    })
+  );
 
   propertyRows.sort((a, b) => a.name.localeCompare(b.name, "nb"));
 

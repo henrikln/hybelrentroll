@@ -32,86 +32,26 @@ async function getLiveData(
   accountId: string,
   propertyId: string
 ): Promise<PropertyData | null> {
-  // propertyId can be a UUID (legacy) or "companyId_address" (new grouped format)
-  // Try to parse as companyId_address first
-  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/;
-  const uuidMatch = propertyId.match(uuidPattern);
-
-  let properties: Array<{
-    streetName: string;
-    streetNumber: string;
-    postalCode: string;
-    postalPlace: string;
-    gnr: number;
-    bnr: number;
-    company: { name: string };
-    units: Array<{
-      id: string;
-      unitNumber: string;
-      customNumber: string;
-      areaSqm: { toNumber(): number } | null;
-      floor: number | null;
-      unitType: string;
-      contracts: Array<{
-        status: string;
-        monthlyRent: { toNumber(): number } | null;
-        leaseholder: { id: string; name: string; email: string } | null;
-      }>;
-    }>;
-  }>;
-
-  if (uuidMatch && propertyId.length > 36 && propertyId[36] === "_") {
-    // New format: companyId_address (e.g. "uuid_Øyjordsveien 3")
-    const companyId = propertyId.slice(0, 36);
-    const address = propertyId.slice(37);
-
-    // Fetch all properties for this company and filter by address match
-    // Avoids string parsing issues with streetName/streetNumber splitting
-    const allProps = await prisma.property.findMany({
-      where: {
-        companyId,
-        company: { accountId },
-      },
-      include: {
-        company: true,
-        units: {
-          include: {
-            contracts: {
-              include: { leaseholder: true },
-              orderBy: { createdAt: "desc" },
-            },
+  // Direct UUID lookup — the 3-field unique constraint ensures no duplicates
+  const property = await prisma.property.findFirst({
+    where: { id: propertyId, company: { accountId } },
+    include: {
+      company: true,
+      units: {
+        include: {
+          contracts: {
+            include: { leaseholder: true },
+            orderBy: { createdAt: "desc" },
           },
         },
       },
-    });
+    },
+  });
 
-    properties = allProps.filter(
-      (p) => `${p.streetName} ${p.streetNumber}` === address
-    );
-  } else {
-    // Legacy UUID format — single property lookup
-    const prop = await prisma.property.findFirst({
-      where: { id: propertyId, company: { accountId } },
-      include: {
-        company: true,
-        units: {
-          include: {
-            contracts: {
-              include: { leaseholder: true },
-              orderBy: { createdAt: "desc" },
-            },
-          },
-        },
-      },
-    });
-    properties = prop ? [prop] : [];
-  }
+  if (!property) return null;
 
-  if (properties.length === 0) return null;
-
-  // Merge all matching properties (handles duplicate DB records for same address)
-  const first = properties[0];
-  const allUnits = properties.flatMap((p) => p.units);
+  const first = property;
+  const allUnits = property.units;
 
   const totalUnits = allUnits.length;
   const vacantUnits = allUnits.filter((u) => {

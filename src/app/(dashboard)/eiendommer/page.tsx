@@ -41,59 +41,37 @@ async function getLiveData(accountId: string): Promise<PropertyCard[]> {
     },
   });
 
-  // Group by company + address to merge duplicate Property records
-  const groupMap = new Map<string, {
-    company: string;
-    name: string;
-    postalCode: string;
-    postalPlace: string;
-    gnr: number | null;
-    bnr: number | null;
-    units: { monthlyRent: number; areaSqm: number; status: string }[];
-  }>();
-
-  for (const company of companies) {
-    for (const property of company.properties) {
-      const addr = `${property.streetName} ${property.streetNumber}`;
-      const key = `${company.id}_${addr}`;
-
-      if (!groupMap.has(key)) {
-        groupMap.set(key, {
-          company: company.name,
-          name: addr,
-          postalCode: property.postalCode,
-          postalPlace: property.postalPlace,
-          gnr: property.gnr,
-          bnr: property.bnr,
-          units: [],
-        });
-      }
-
-      const group = groupMap.get(key)!;
-      for (const u of property.units) {
+  return companies.flatMap((company) =>
+    company.properties.map((property) => {
+      const totalUnits = property.units.length;
+      const vacantUnits = property.units.filter((u) => {
         const contract = u.contracts[0];
-        group.units.push({
-          monthlyRent: contract ? toNum(contract.monthlyRent) : 0,
-          areaSqm: toNum(u.areaSqm),
-          status: contract?.status ?? "ledig",
-        });
-      }
-    }
-  }
+        return !contract || contract.status === "ledig";
+      }).length;
+      const annualRent = property.units.reduce((sum, u) => {
+        const contract = u.contracts[0];
+        return sum + (contract ? toNum(contract.monthlyRent) * 12 : 0);
+      }, 0);
+      const totalArea = property.units.reduce(
+        (sum, u) => sum + toNum(u.areaSqm),
+        0
+      );
 
-  return [...groupMap.entries()].map(([key, group]) => ({
-    id: key,
-    name: group.name,
-    postalCode: group.postalCode,
-    postalPlace: group.postalPlace,
-    gnr: group.gnr,
-    bnr: group.bnr,
-    company: group.company,
-    totalUnits: group.units.length,
-    vacantUnits: group.units.filter((u) => u.status === "ledig").length,
-    annualRent: group.units.reduce((sum, u) => sum + u.monthlyRent * 12, 0),
-    totalArea: group.units.reduce((sum, u) => sum + u.areaSqm, 0),
-  }));
+      return {
+        id: property.id,
+        name: `${property.streetName} ${property.streetNumber}`,
+        postalCode: property.postalCode,
+        postalPlace: property.postalPlace,
+        gnr: property.gnr,
+        bnr: property.bnr,
+        company: company.name,
+        totalUnits,
+        vacantUnits,
+        annualRent,
+        totalArea,
+      };
+    })
+  );
 }
 
 function getSnapshotCards(

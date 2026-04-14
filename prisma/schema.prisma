@@ -128,7 +128,7 @@ model Property {
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
   units   Unit[]
 
-  @@unique([companyId, streetName, streetNumber, postalCode, gnr, bnr])
+  @@unique([companyId, streetName, streetNumber])
   @@map("properties")
 }
 
@@ -351,6 +351,7 @@ model RentRollSnapshot {
   company Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@index([companyId, unitKey, reportDate])
+  @@index([companyId, reportDate])
   @@map("rent_roll_snapshots")
 }
 
