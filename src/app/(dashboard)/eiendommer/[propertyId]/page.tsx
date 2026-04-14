@@ -64,16 +64,12 @@ async function getLiveData(
     // New format: companyId_address (e.g. "uuid_Øyjordsveien 3")
     const companyId = propertyId.slice(0, 36);
     const address = propertyId.slice(37);
-    // Split address into streetName + streetNumber (last word)
-    const lastSpace = address.lastIndexOf(" ");
-    const streetName = lastSpace > 0 ? address.slice(0, lastSpace) : address;
-    const streetNumber = lastSpace > 0 ? address.slice(lastSpace + 1) : "";
 
-    properties = await prisma.property.findMany({
+    // Fetch all properties for this company and filter by address match
+    // Avoids string parsing issues with streetName/streetNumber splitting
+    const allProps = await prisma.property.findMany({
       where: {
         companyId,
-        streetName,
-        streetNumber,
         company: { accountId },
       },
       include: {
@@ -88,6 +84,10 @@ async function getLiveData(
         },
       },
     });
+
+    properties = allProps.filter(
+      (p) => `${p.streetName} ${p.streetNumber}` === address
+    );
   } else {
     // Legacy UUID format — single property lookup
     const prop = await prisma.property.findFirst({
