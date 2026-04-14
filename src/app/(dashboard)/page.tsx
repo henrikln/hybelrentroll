@@ -58,6 +58,10 @@ async function getDataFromLiveTables(accountId: string) {
         vacantUnits,
         units: property.units.map((u) => {
           const contract = u.contracts[0];
+          const unitKey = [
+            property.streetName, property.streetNumber,
+            u.unitNumber ?? "", u.customNumber ?? "",
+          ].join("_").toLowerCase().replace(/\s+/g, "");
           return {
             id: u.id,
             unitNumber: u.unitNumber || u.customNumber || "—",
@@ -67,6 +71,8 @@ async function getDataFromLiveTables(accountId: string) {
             status: contract?.status ?? "ledig",
             leaseholderName: contract?.leaseholder?.name ?? null,
             monthlyRent: contract ? toNum(contract.monthlyRent) : 0,
+            unitKey,
+            companyId: company.id,
           };
         }),
       };
@@ -169,6 +175,8 @@ function getDataFromSnapshots(
         status: u.status ?? "ledig",
         leaseholderName: u.leaseholderName,
         monthlyRent: toNum(u.monthlyRent),
+        unitKey: u.unitKey,
+        companyId: u.companyId,
       })),
     };
   });

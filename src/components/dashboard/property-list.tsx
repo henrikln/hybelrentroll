@@ -9,8 +9,10 @@ import {
   X,
   ChevronUp,
   ChevronDown,
+  History,
 } from "lucide-react";
 import { formatNOKShort, formatNOK, formatArea } from "@/lib/format";
+import Link from "next/link";
 
 interface UnitInfo {
   id: string;
@@ -21,6 +23,8 @@ interface UnitInfo {
   status: string;
   leaseholderName: string | null;
   monthlyRent: number;
+  unitKey?: string;
+  companyId?: string;
 }
 
 interface PropertyRow {
@@ -270,6 +274,7 @@ function PropertyPopup({
               <th className="pb-2 font-medium">Leie/mnd</th>
               <th className="pb-2 font-medium">Areal</th>
               <th className="pb-2 font-medium">Status</th>
+              <th className="pb-2 font-medium"></th>
             </tr>
           </thead>
           <tbody>
@@ -304,6 +309,18 @@ function PropertyPopup({
                   >
                     {unit.status}
                   </span>
+                </td>
+                <td className="py-2">
+                  {unit.unitKey && unit.companyId && (
+                    <Link
+                      href={`/tidslinje/${encodeURIComponent(unit.unitKey)}?company=${unit.companyId}`}
+                      className="text-gray-300 hover:text-gray-600"
+                      title="Vis tidslinje"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <History className="h-4 w-4" />
+                    </Link>
+                  )}
                 </td>
               </tr>
             ))}
