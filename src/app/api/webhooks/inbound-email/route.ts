@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Webhook } from "svix";
-import { prisma } from "@/lib/db";
+import { prisma, setRLSContext } from "@/lib/db";
 import { importRentRollToDb, type DbImportResult } from "@/lib/excel/db-importer";
 
 const FROM_EMAIL = "Hybel.no Viewer <noreply@estatelab.amp11.no>";
@@ -88,6 +88,9 @@ export async function POST(req: NextRequest) {
         { status: 200 }
       );
     }
+
+    // Set RLS context for all subsequent queries in this request
+    await setRLSContext(sender.accountId);
 
     // 2. Check webhook has xlsx attachments
     const webhookAttachments: Array<{ filename?: string }> = data.attachments ?? [];

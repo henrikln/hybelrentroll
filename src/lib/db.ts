@@ -21,3 +21,33 @@ function createPrismaClient() {
 export const prisma = globalForPrisma.prisma ?? createPrismaClient();
 
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
+
+/**
+ * Set the RLS session variable for the current account.
+ * Must be called inside a Prisma interactive transaction (`prisma.$transaction`)
+ * — `SET LOCAL` scopes the variable to the current transaction only.
+ *
+ * Usage:
+ *   await prisma.$transaction(async (tx) => {
+ *     await setRLSAccountId(tx, accountId);
+ *     // ... all queries in tx are now RLS-scoped
+ *   });
+ *
+ * For non-transactional contexts (most read paths), use `setRLSContext(accountId)`
+ * which sets it for the session/connection lifetime.
+ */
+export async function setRLSAccountId(
+  tx: Parameters<Parameters<PrismaClient["$transaction"]>[0]>[0],
+  accountId: string
+) {
+  await tx.$executeRaw`SELECT set_config('app.current_account_id', ${accountId}, true)`;
+}
+
+/**
+ * Set the RLS context for the current connection (non-transactional).
+ * Uses SET (not SET LOCAL) so it persists for all queries on this connection
+ * until overwritten. Safe in serverless because each request gets a fresh connection.
+ */
+export async function setRLSContext(accountId: string) {
+  await prisma.$executeRaw`SELECT set_config('app.current_account_id', ${accountId}, false)`;
+}

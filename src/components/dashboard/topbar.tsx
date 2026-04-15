@@ -1,5 +1,5 @@
 import Image from "next/image";
-import { prisma } from "@/lib/db";
+import { prisma, setRLSContext } from "@/lib/db";
 import { PeriodSelector } from "./period-selector";
 
 async function getSession() {
@@ -28,6 +28,7 @@ export async function Topbar() {
   // Get available report periods for this account
   let periods: string[] = [];
   if (accountId) {
+    await setRLSContext(accountId);
     const snapshots = await prisma.rentRollSnapshot.findMany({
       where: { company: { accountId } },
       select: { reportDate: true },

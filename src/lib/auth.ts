@@ -1,7 +1,7 @@
 import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
 import MicrosoftEntraID from "next-auth/providers/microsoft-entra-id";
-import { prisma } from "@/lib/db";
+import { prisma, setRLSContext } from "@/lib/db";
 
 const SUPER_ADMINS = (process.env.SUPER_ADMIN_EMAILS ?? "")
   .split(",")
@@ -156,10 +156,16 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 /**
  * Get the current user's accountId from the session.
  * Use this in server components and API routes for tenant isolation.
+ * Also sets the Postgres RLS session variable so all subsequent queries
+ * on this connection are scoped to the current tenant.
  */
 export async function getAccountId(): Promise<string | null> {
   const session = await auth();
-  return session?.accountId ?? null;
+  const accountId = session?.accountId ?? null;
+  if (accountId) {
+    await setRLSContext(accountId);
+  }
+  return accountId;
 }
 
 /**
@@ -172,6 +178,7 @@ export async function getIsAdmin(): Promise<boolean> {
 
 /**
  * Require admin access (global or tenant). Returns accountId or throws redirect.
+ * Also sets the Postgres RLS session variable.
  */
 export async function requireAdmin(): Promise<string> {
   const session = await auth();
@@ -179,7 +186,9 @@ export async function requireAdmin(): Promise<string> {
     const { redirect } = await import("next/navigation");
     redirect("/");
   }
-  return session!.accountId!;
+  const accountId = session!.accountId!;
+  await setRLSContext(accountId);
+  return accountId;
 }
 
 /**
@@ -192,6 +201,7 @@ export async function getIsGlobalAdmin(): Promise<boolean> {
 
 /**
  * Require global admin access. Returns accountId or throws redirect.
+ * Also sets the Postgres RLS session variable.
  */
 export async function requireGlobalAdmin(): Promise<string> {
   const session = await auth();
@@ -199,5 +209,7 @@ export async function requireGlobalAdmin(): Promise<string> {
     const { redirect } = await import("next/navigation");
     redirect("/");
   }
-  return session!.accountId!;
+  const accountId = session!.accountId!;
+  await setRLSContext(accountId);
+  return accountId;
 }
