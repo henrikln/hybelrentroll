@@ -6,7 +6,7 @@ UPDATE units u
 SET property_id = keeper.id
 FROM properties p
 JOIN (
-  SELECT company_id, street_name, street_number, MIN(id) AS id
+  SELECT company_id, street_name, street_number, (array_agg(id ORDER BY created_at ASC))[1] AS id
   FROM properties
   GROUP BY company_id, street_name, street_number
 ) keeper
@@ -39,8 +39,9 @@ WHERE EXISTS (
 );
 
 -- Step 3: Drop old constraint, add new narrower constraint
-ALTER TABLE "properties" DROP CONSTRAINT "properties_company_id_street_name_street_number_postal_code_g_key";
-CREATE UNIQUE INDEX "properties_company_id_street_name_street_number_key" ON "properties"("company_id", "street_name", "street_number");
+DROP INDEX IF EXISTS "properties_company_id_street_name_street_number_postal_code_g_key";
+DROP INDEX IF EXISTS "properties_company_id_street_name_street_number_postal_code_key";
+CREATE UNIQUE INDEX IF NOT EXISTS "properties_company_id_street_name_street_number_key" ON "properties"("company_id", "street_name", "street_number");
 
 -- Step 4: Add missing index for snapshot queries by company + reportDate
-CREATE INDEX "idx_snapshot_company_report_date" ON "rent_roll_snapshots"("company_id", "report_date");
+CREATE INDEX IF NOT EXISTS "idx_snapshot_company_report_date" ON "rent_roll_snapshots"("company_id", "report_date");
