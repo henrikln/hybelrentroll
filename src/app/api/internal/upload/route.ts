@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { importRentRollToDb } from "@/lib/excel/db-importer";
 import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/db";
+import { prisma, setRLSContext } from "@/lib/db";
 
 export async function POST(req: NextRequest) {
   try {
@@ -28,6 +28,9 @@ export async function POST(req: NextRequest) {
 
     // Find or create account for current user
     const account = await getOrCreateAccount(session.user.email, session.user.name ?? undefined);
+
+    // Set RLS context so all import queries are tenant-scoped
+    await setRLSContext(account.id);
 
     const buffer = Buffer.from(await file.arrayBuffer());
     const result = await importRentRollToDb(buffer, account.id, {

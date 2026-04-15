@@ -9,30 +9,31 @@ export async function POST(req: NextRequest) {
   try {
     const rawBody = await req.text();
 
-    // Verify webhook signature if secret is configured
+    // Verify webhook signature — fail closed if secret is not configured
     const webhookSecret = process.env.RESEND_WEBHOOK_SECRET;
-    if (webhookSecret) {
-      const svixId = req.headers.get("svix-id");
-      const svixTimestamp = req.headers.get("svix-timestamp");
-      const svixSignature = req.headers.get("svix-signature");
+    if (!webhookSecret) {
+      console.error("[inbound-email] RESEND_WEBHOOK_SECRET not set — rejecting request");
+      return NextResponse.json({ error: "Webhook verification not configured" }, { status: 500 });
+    }
 
-      if (!svixId || !svixTimestamp || !svixSignature) {
-        console.warn("[inbound-email] Missing svix headers");
-        return NextResponse.json({ error: "Missing webhook signature" }, { status: 401 });
-      }
+    const svixId = req.headers.get("svix-id");
+    const svixTimestamp = req.headers.get("svix-timestamp");
+    const svixSignature = req.headers.get("svix-signature");
 
-      try {
-        new Webhook(webhookSecret).verify(rawBody, {
-          "svix-id": svixId,
-          "svix-timestamp": svixTimestamp,
-          "svix-signature": svixSignature,
-        });
-      } catch {
-        console.warn("[inbound-email] Invalid webhook signature");
-        return NextResponse.json({ error: "Invalid webhook signature" }, { status: 401 });
-      }
-    } else {
-      console.warn("[inbound-email] RESEND_WEBHOOK_SECRET not set — skipping signature verification");
+    if (!svixId || !svixTimestamp || !svixSignature) {
+      console.warn("[inbound-email] Missing svix headers");
+      return NextResponse.json({ error: "Missing webhook signature" }, { status: 401 });
+    }
+
+    try {
+      new Webhook(webhookSecret).verify(rawBody, {
+        "svix-id": svixId,
+        "svix-timestamp": svixTimestamp,
+        "svix-signature": svixSignature,
+      });
+    } catch {
+      console.warn("[inbound-email] Invalid webhook signature");
+      return NextResponse.json({ error: "Invalid webhook signature" }, { status: 401 });
     }
 
     const body = JSON.parse(rawBody);
@@ -266,6 +267,11 @@ async function fetchReceivedAttachments(
       const dlRes = await fetch(att.download_url);
       if (dlRes.ok) {
         const arrayBuffer = await dlRes.arrayBuffer();
+        const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024; // 10 MB
+        if (arrayBuffer.byteLength > MAX_ATTACHMENT_SIZE) {
+          console.warn(`[inbound-email] Attachment ${att.filename} too large: ${arrayBuffer.byteLength} bytes (max ${MAX_ATTACHMENT_SIZE})`);
+          continue;
+        }
         files.push({ filename: att.filename, buffer: Buffer.from(arrayBuffer) });
         console.log(`[inbound-email] Downloaded ${att.filename}: ${arrayBuffer.byteLength} bytes`);
       } else {

@@ -4,7 +4,7 @@
  * create snapshots → diff against previous → generate events.
  */
 
-import { prisma } from "@/lib/db";
+import { prisma, setRLSAccountId } from "@/lib/db";
 import { parseRentRollExcel } from "./parser";
 import { buildUnitKey, diffSnapshots, type SnapshotData } from "./differ";
 import type { ParsedRow } from "./validators";
@@ -153,6 +153,9 @@ export async function importRentRollToDb(
     let eventCount = 0;
 
     await prisma.$transaction(async (tx) => {
+      // Ensure RLS context is set on the transaction connection
+      await setRLSAccountId(tx, accountId);
+
       // Determine if this is the latest report for the company
       // Done inside transaction for consistency
       const newerSnapshot = await tx.rentRollSnapshot.findFirst({
