@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { getAccountId } from "@/lib/auth";
 import { FileSpreadsheet } from "lucide-react";
 import { ImportUploader } from "./import-uploader";
+import { DeleteImportButton } from "./delete-import-button";
 
 export default async function ImportPage() {
   const accountId = await getAccountId();
@@ -74,6 +75,7 @@ export default async function ImportPage() {
                 <th className="px-5 py-3 font-medium">Kilde</th>
                 <th className="px-5 py-3 font-medium">Status</th>
                 <th className="px-5 py-3 font-medium">Importert</th>
+                <th className="px-5 py-3 font-medium"></th>
               </tr>
             </thead>
             <tbody>
@@ -121,6 +123,14 @@ export default async function ImportPage() {
                     </span>
                   </td>
                   <td className="px-5 py-3 text-gray-400">{row.createdAt}</td>
+                  <td className="px-5 py-3 text-right">
+                    <DeleteImportButton
+                      importId={row.id}
+                      filename={row.filename}
+                      company={row.company}
+                      reportDate={row.reportDate}
+                    />
+                  </td>
                 </tr>
               ))}
             </tbody>
