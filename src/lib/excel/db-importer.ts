@@ -36,6 +36,12 @@ export async function importRentRollToDb(
     source: ImportSource;
     senderEmail?: string;
     emailId?: string;
+    /**
+     * If set, the file's org number is verified to belong to this Company.
+     * Used by the inbound-email webhook so files sent to nagelgarden@... cannot
+     * accidentally (or maliciously) import data for a different company.
+     */
+    expectedCompanyId?: string;
   }
 ): Promise<DbImportResult> {
   // 1. Parse Excel
@@ -77,6 +83,16 @@ export async function importRentRollToDb(
       orgNumber,
     },
   });
+
+  // When the import is routed via a Company inbox e-mail, verify that the
+  // org number in the file matches the expected Company. This prevents a
+  // file sent to nagelgarden@... from creating/importing into a different
+  // company within the same account.
+  if (opts.expectedCompanyId && company.id !== opts.expectedCompanyId) {
+    throw new Error(
+      `Organisasjonsnummeret i filen (${orgNumber}) tilhører ikke selskapet som er konfigurert for denne mottakeradressen. Send filen til riktig adresse, eller be administrator om å oppdatere innboks-adressen for selskapet.`
+    );
+  }
 
   // 3. Imports are additive — multiple files can contribute snapshots for the
   //    same company+reportDate (e.g. split by property). The dedup layer in

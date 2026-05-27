@@ -50,6 +50,7 @@ const navigation: NavSection[] = [
     title: "System",
     items: [
       { label: "Import", href: "/import", icon: Upload },
+      { label: "Innbokser", href: "/admin/inbokser", icon: Building2, adminOnly: true },
       { label: "Avsendere", href: "/admin/senders", icon: Mail, adminOnly: true },
       { label: "Brukere", href: "/admin/users", icon: Users, adminOnly: true },
     ],

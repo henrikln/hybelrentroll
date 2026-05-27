@@ -48,10 +48,21 @@ export async function POST(req: NextRequest) {
     const senderEmail = parseEmailAddress(rawFrom);
     const emailId: string | undefined = data.email_id;
 
-    console.log(`[inbound-email] from="${rawFrom}", parsed="${senderEmail}", email_id=${emailId}`);
+    // Parse recipient — Resend "to" can be a string, array of strings, or
+    // array of { address } objects. We pick the first matching our inbound
+    // domain when available, otherwise the first address present.
+    const recipientEmail = parseRecipient(data.to);
+
+    console.log(
+      `[inbound-email] from="${rawFrom}" parsed="${senderEmail}" to="${recipientEmail}" email_id=${emailId}`
+    );
 
     if (!senderEmail) {
       return NextResponse.json({ error: "Missing sender" }, { status: 400 });
+    }
+
+    if (!recipientEmail) {
+      return NextResponse.json({ error: "Missing recipient" }, { status: 400 });
     }
 
     // Idempotency: track which files from this email have already been imported.
@@ -71,27 +82,51 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 1. Look up sender → account
-    const sender = await prisma.allowedSender.findUnique({
-      where: { email: senderEmail },
-      include: { account: true },
+    // 1. Look up recipient → Company (routing via "to" address)
+    const company = await prisma.company.findUnique({
+      where: { inboxEmail: recipientEmail },
+      select: { id: true, accountId: true, name: true, orgNumber: true },
     });
 
-    if (!sender) {
-      console.warn(`[inbound-email] Unknown sender: ${senderEmail}`);
+    if (!company) {
+      console.warn(`[inbound-email] Unknown recipient inbox: ${recipientEmail}`);
       await sendErrorEmail(
         senderEmail,
-        "Ukjent avsender",
-        `E-postadressen ${senderEmail} er ikke registrert i systemet. Be en administrator om å legge til adressen under Avsendere i dashboardet.`
+        "Ukjent mottakeradresse",
+        `Mottakeradressen ${recipientEmail} er ikke knyttet til noe selskap i systemet. Be en administrator om å konfigurere innboks-adressen for selskapet under Selskaper i dashboardet.`
       );
       return NextResponse.json(
-        { status: "rejected", reason: `Ukjent avsender: ${senderEmail}` },
+        { status: "rejected", reason: `Ukjent mottaker: ${recipientEmail}` },
+        { status: 200 }
+      );
+    }
+
+    // 2. Verify sender is authorized for this company's account (account-wide access)
+    const sender = await prisma.allowedSender.findUnique({
+      where: { email: senderEmail },
+      select: { accountId: true },
+    });
+
+    if (!sender || sender.accountId !== company.accountId) {
+      console.warn(
+        `[inbound-email] Sender ${senderEmail} not authorized for ${recipientEmail} (company.accountId=${company.accountId}, sender.accountId=${sender?.accountId ?? "none"})`
+      );
+      await sendErrorEmail(
+        senderEmail,
+        "Avsender ikke autorisert",
+        `E-postadressen ${senderEmail} har ikke tilgang til å sende rent rolls til ${recipientEmail}. Be administrator om å legge til adressen under Avsendere i dashboardet.`
+      );
+      return NextResponse.json(
+        {
+          status: "rejected",
+          reason: `Sender ${senderEmail} not authorized for ${recipientEmail}`,
+        },
         { status: 200 }
       );
     }
 
     // Set RLS context for all subsequent queries in this request
-    await setRLSContext(sender.accountId);
+    await setRLSContext(company.accountId);
 
     // 2. Check webhook has xlsx attachments
     const webhookAttachments: Array<{ filename?: string }> = data.attachments ?? [];
@@ -148,11 +183,12 @@ export async function POST(req: NextRequest) {
       }
 
       try {
-        const result = await importRentRollToDb(attachment.buffer, sender.accountId, {
+        const result = await importRentRollToDb(attachment.buffer, company.accountId, {
           filename: attachment.filename,
           source: "email",
           senderEmail,
           emailId,
+          expectedCompanyId: company.id,
         });
 
         if (result.errorCount > 0) {
@@ -202,7 +238,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       status: results.length > 0 ? "processed" : "failed",
       senderEmail,
-      accountName: sender.account.name,
+      recipientEmail,
+      companyName: company.name,
       results: results.map((r) => ({
         importId: r.importId,
         orgName: r.orgName,
@@ -228,6 +265,34 @@ function parseEmailAddress(raw: string): string {
   // Might be a bare email
   const trimmed = raw.toLowerCase().trim();
   return trimmed.includes("@") ? trimmed : "";
+}
+
+/**
+ * Parse the "to" field from a Resend inbound webhook. The payload may be:
+ *  - a string ("Name <addr@x>" or "addr@x")
+ *  - an array of strings
+ *  - an array of objects with { address } or { email }
+ * Returns the first valid lower-cased email, or empty string.
+ */
+function parseRecipient(raw: unknown): string {
+  if (!raw) return "";
+  if (typeof raw === "string") return parseEmailAddress(raw);
+  if (Array.isArray(raw)) {
+    for (const item of raw) {
+      if (typeof item === "string") {
+        const e = parseEmailAddress(item);
+        if (e) return e;
+      } else if (item && typeof item === "object") {
+        const candidate =
+          (item as { address?: string; email?: string }).address ??
+          (item as { address?: string; email?: string }).email ??
+          "";
+        const e = parseEmailAddress(candidate);
+        if (e) return e;
+      }
+    }
+  }
+  return "";
 }
 
 /** Fetch attachment files via Resend receiving API */

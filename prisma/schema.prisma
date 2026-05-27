@@ -70,12 +70,15 @@ model Account {
 /// A registered Norwegian company (AS) that acts as landlord (Utleier).
 /// Each rent roll file belongs to one company, identified by org number.
 model Company {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  accountId String   @map("account_id") @db.Uuid
-  name      String
-  orgNumber String   @map("org_number")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId  String   @map("account_id") @db.Uuid
+  name       String
+  orgNumber  String   @map("org_number")
+  /// Full inbound email address that routes rent rolls to this company.
+  /// Example: "nagelgarden@estatelab.amp11.no". Globally unique, lower-cased.
+  inboxEmail String?  @unique @map("inbox_email")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
 
   account            Account            @relation(fields: [accountId], references: [id], onDelete: Cascade)
   properties         Property[]
