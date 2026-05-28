@@ -53,10 +53,15 @@ enum ImportStatus {
 /// Multi-tenancy root. One account per logged-in user/org (e.g. Henrik's account).
 /// An account can own multiple companies (Utleier).
 model Account {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name      String
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name       String
+  /// Full inbound email address that routes all rent rolls for this account.
+  /// The file's organisation number determines which Company within the
+  /// account the data is imported to.
+  /// Example: "joa@estatelab.amp11.no". Globally unique, lower-cased.
+  inboxEmail String?  @unique @map("inbox_email")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
 
   users           User[]
   companies       Company[]
@@ -74,9 +79,6 @@ model Company {
   accountId  String   @map("account_id") @db.Uuid
   name       String
   orgNumber  String   @map("org_number")
-  /// Full inbound email address that routes rent rolls to this company.
-  /// Example: "nagelgarden@estatelab.amp11.no". Globally unique, lower-cased.
-  inboxEmail String?  @unique @map("inbox_email")
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
 

@@ -82,18 +82,19 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 1. Look up recipient → Company (routing via "to" address)
-    const company = await prisma.company.findUnique({
+    // 1. Look up recipient → Account (routing via "to" address). The file's
+    //    org number determines which Company within the account.
+    const account = await prisma.account.findUnique({
       where: { inboxEmail: recipientEmail },
-      select: { id: true, accountId: true, name: true, orgNumber: true },
+      select: { id: true, name: true },
     });
 
-    if (!company) {
+    if (!account) {
       console.warn(`[inbound-email] Unknown recipient inbox: ${recipientEmail}`);
       await sendErrorEmail(
         senderEmail,
         "Ukjent mottakeradresse",
-        `Mottakeradressen ${recipientEmail} er ikke knyttet til noe selskap i systemet. Be en administrator om å konfigurere innboks-adressen for selskapet under Selskaper i dashboardet.`
+        `Mottakeradressen ${recipientEmail} er ikke knyttet til noen konto i systemet. Be en administrator om å konfigurere innboks-adressen under Innbokser i dashboardet.`
       );
       return NextResponse.json(
         { status: "rejected", reason: `Ukjent mottaker: ${recipientEmail}` },
@@ -101,15 +102,15 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 2. Verify sender is authorized for this company's account (account-wide access)
+    // 2. Verify sender is authorized for this account
     const sender = await prisma.allowedSender.findUnique({
       where: { email: senderEmail },
       select: { accountId: true },
     });
 
-    if (!sender || sender.accountId !== company.accountId) {
+    if (!sender || sender.accountId !== account.id) {
       console.warn(
-        `[inbound-email] Sender ${senderEmail} not authorized for ${recipientEmail} (company.accountId=${company.accountId}, sender.accountId=${sender?.accountId ?? "none"})`
+        `[inbound-email] Sender ${senderEmail} not authorized for ${recipientEmail} (account=${account.id}, sender.accountId=${sender?.accountId ?? "none"})`
       );
       await sendErrorEmail(
         senderEmail,
@@ -126,7 +127,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Set RLS context for all subsequent queries in this request
-    await setRLSContext(company.accountId);
+    await setRLSContext(account.id);
 
     // 2. Check webhook has xlsx attachments
     const webhookAttachments: Array<{ filename?: string }> = data.attachments ?? [];
@@ -183,12 +184,11 @@ export async function POST(req: NextRequest) {
       }
 
       try {
-        const result = await importRentRollToDb(attachment.buffer, company.accountId, {
+        const result = await importRentRollToDb(attachment.buffer, account.id, {
           filename: attachment.filename,
           source: "email",
           senderEmail,
           emailId,
-          expectedCompanyId: company.id,
         });
 
         if (result.errorCount > 0) {
@@ -239,7 +239,7 @@ export async function POST(req: NextRequest) {
       status: results.length > 0 ? "processed" : "failed",
       senderEmail,
       recipientEmail,
-      companyName: company.name,
+      accountName: account.name,
       results: results.map((r) => ({
         importId: r.importId,
         orgName: r.orgName,
